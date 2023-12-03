@@ -1,7 +1,7 @@
 use aiken/interval.{Finite}
-use aiken/list
-use aiken/transaction.{ScriptContext, Spend, Transaction, ValidityRange}
-use staking_contracts/datums.{POSIXTime, TimeLockDatum, VerificationKeyHash}
+use aiken/transaction.{ScriptContext, Spend, ValidityRange}
+use staking_contracts/datums.{POSIXTime, TimeLockDatum}
+use staking_contracts/utils.{must_be_signed_by}
 
 validator {
   fn time_lock(datum: TimeLockDatum, _redeemer: Void, ctx: ScriptContext) {
@@ -13,10 +13,6 @@ validator {
       _ -> False
     }
   }
-}
-
-fn must_be_signed_by(transaction: Transaction, vk: VerificationKeyHash) {
-  list.has(transaction.extra_signatories, vk)
 }
 
 fn must_start_after(range: ValidityRange, lock_expiration_time: POSIXTime) {
