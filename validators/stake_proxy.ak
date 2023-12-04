@@ -29,7 +29,7 @@ fn is_proper_locking_tx(
       |> transaction.find_input(my_output_reference)
   let time_lock_outputs =
     ctx.transaction.outputs
-      |> transaction.find_script_outputs(datum.time_lock_contract_hash)
+      |> transaction.find_script_outputs(datum.time_lock_hash)
   expect Some(time_lock_output) = time_lock_outputs |> list.at(0)
   let time_lock_datum = to_time_lock_datum(time_lock_output.datum)
   let staked_tokens =

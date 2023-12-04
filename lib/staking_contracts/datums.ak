@@ -24,7 +24,7 @@ pub type RewardSetting {
 }
 
 pub type StakePoolDatum {
-  time_lock_contract_hash: ScriptHash,
+  time_lock_hash: ScriptHash,
   reward_settings: List<RewardSetting>,
   policy_id: PolicyId,
   asset_name: AssetName,
@@ -39,7 +39,7 @@ pub type StakeProxyDatum {
   owner: VerificationKeyHash,
   days_locked: Int,
   reward_percentage: Int,
-  time_lock_contract_hash: ScriptHash,
+  time_lock_hash: ScriptHash,
   policy_id: PolicyId,
   asset_name: AssetName,
 }
@@ -57,7 +57,7 @@ pub fn to_time_lock_datum(data: Data) -> TimeLockDatum {
 test must_cast_to_stake_pool_datum() {
   let stake_pool_datum =
     StakePoolDatum {
-      time_lock_contract_hash: #"",
+      time_lock_hash: #"",
       reward_settings: [],
       policy_id: #"",
       asset_name: #"",

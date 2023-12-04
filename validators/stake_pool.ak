@@ -1,5 +1,6 @@
 use aiken/list.{at}
 use aiken/transaction.{OutputReference, ScriptContext, Spend}
+use aiken/transaction/credential.{ScriptCredential}
 use aiken/transaction/value.{add}
 use staking_contracts/datums.{
   StakePoolDatum, StakePoolRedeemer, to_stake_pool_datum,
@@ -41,7 +42,7 @@ fn is_proper_locking_tx(
   expect Some(self_output) = self_outputs |> at(0)
   let time_lock_outputs =
     ctx.transaction.outputs
-      |> transaction.find_script_outputs(datum.time_lock_contract_hash)
+      |> transaction.find_script_outputs(datum.time_lock_hash)
   expect Some(time_lock) = time_lock_outputs |> at(0)
   expect Some(reward_setting) =
     datum.reward_settings |> at(redeemer.reward_index)
@@ -60,7 +61,9 @@ fn is_proper_locking_tx(
     must_have_exactly_one_output(self_outputs),
     must_have_exactly_one_output(time_lock_outputs),
     must_have_same_datum(datum, to_stake_pool_datum(self_output.datum)),
-    time_lock.reference_script == Some(datum.time_lock_contract_hash),
+    time_lock.address.payment_credential == ScriptCredential(
+      datum.time_lock_hash,
+    ),
     locked_amount == add_percentage(
       staked_amount,
       reward_setting.percentage_reward,
