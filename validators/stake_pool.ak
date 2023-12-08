@@ -63,24 +63,30 @@ fn is_proper_locking_tx(
   let stake_pool_size =
     self.output.value
       |> value.quantity_of(datum.policy_id, datum.asset_name)
+
   //Find stake_pool token quantity in output
   let new_stake_pool_size =
     self_output.value
       |> value.quantity_of(datum.policy_id, datum.asset_name)
+
   //Difference between old and new quantity is equal to the reward to the staker
   let reward = stake_pool_size - new_stake_pool_size
+
   //The locked amount in the time lock output
   let locked_amount =
     time_lock.value
       |> value.quantity_of(datum.policy_id, datum.asset_name)
+
   //The staked amount is deduced from the locked amount and the reward
   let staked_amount = locked_amount - reward
+
   //Ensure the locked amount matches the reward setting
   let correct_locked_amount =
     locked_amount == add_percentage(
       staked_amount,
       reward_setting.percentage_reward,
     )
+
   //Make sure no other assets have been altered in the stake pool output compared to the input
   let correct_output_value =
     self.output.value == add(
