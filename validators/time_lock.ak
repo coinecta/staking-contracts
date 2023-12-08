@@ -6,6 +6,7 @@ use staking_contracts/utils.{must_be_signed_by}
 validator {
   fn time_lock(datum: TimeLockDatum, _redeemer: Void, ctx: ScriptContext) {
     when ctx.purpose is {
+      //This utxo can only be spend by its owner and after the unlock time has passed
       Spend(_) -> and {
           must_be_signed_by(ctx.transaction, datum.owner),
           must_start_after(ctx.transaction.validity_range, datum.lock_until),

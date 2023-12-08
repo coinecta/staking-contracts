@@ -54,6 +54,11 @@ pub fn to_time_lock_datum(data: Data) -> TimeLockDatum {
   my_datum
 }
 
+// pub fn to_datum(data: Data) -> Datum {
+//   expect my_datum: Datum = data
+//   my_datum
+// }
+
 test must_cast_to_stake_pool_datum() {
   let stake_pool_datum =
     StakePoolDatum {

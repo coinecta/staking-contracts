@@ -1,6 +1,6 @@
 use aiken/interval.{Finite}
 use aiken/list.{has, length}
-use aiken/transaction.{Output, Transaction, ValidityRange}
+use aiken/transaction.{Output, Transaction, ValidityRange, InlineDatum}
 use staking_contracts/datums.{
   StakePoolDatum, TimeLockDatum, VerificationKeyHash, to_time_lock_datum,
 }
@@ -22,21 +22,33 @@ pub fn add_percentage(amount: Int, percentage: Int) -> Int {
 }
 
 pub const day_millis = 86_400_000
+pub const hour_millis = 3_600_000
 
+//Ensure that the time_lock output is set to expire after a set amount of days, with a certain buffer
+//to allow for a realistic transaction validity range
 pub fn must_be_locked_until(
   range: ValidityRange,
   time_lock: Output,
   days_to_be_locked: Int,
+  buffer: Int,
 ) {
-  when range.lower_bound.bound_type is {
-    Finite(tx_earliest_time) -> {
-      let lock_expiration_time = to_time_lock_datum(time_lock.datum).lock_until
-      and {
-        tx_earliest_time + days_to_be_locked * day_millis <= lock_expiration_time,
-        tx_earliest_time + days_to_be_locked * day_millis + 300000 >= lock_expiration_time,
+  expect InlineDatum(time_lock_datum) = time_lock.datum
+  let lock_expiration_time = to_time_lock_datum(time_lock_datum).lock_until
+  and {
+    //This ensures for the user that the assets are not locked longer than expected
+    when range.lower_bound.bound_type is {
+      Finite(tx_earliest_time) -> {
+        tx_earliest_time + days_to_be_locked * day_millis + buffer >= lock_expiration_time
       }
+      _ -> False
+    },
+    //This ensures assets are locked for at least the required amount as configured in the stake pool
+    when range.upper_bound.bound_type is {
+      Finite(tx_latest_time) -> {
+        tx_latest_time + days_to_be_locked * day_millis - buffer <= lock_expiration_time
+      }
+      _ -> False
     }
-    _ -> False
   }
 }
 
