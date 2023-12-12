@@ -1,11 +1,16 @@
+use aiken/bytearray
 use aiken/interval.{Finite, Interval, IntervalBound}
-use aiken/list
+use aiken/list.{find}
 use aiken/transaction.{
-  InlineDatum, Input, Output, OutputReference, ScriptContext, Spend, Transaction,
-  TransactionId,
+  InlineDatum, Input, NoDatum, Output, OutputReference, ScriptContext, Spend,
+  Transaction, TransactionId,
 }
-use aiken/transaction/credential.{Address, ScriptCredential}
-use aiken/transaction/value.{add, from_lovelace, quantity_of}
+use aiken/transaction/credential.{
+  Address, ScriptCredential, VerificationKeyCredential, from_verification_key,
+}
+use aiken/transaction/value.{
+  add, from_lovelace, from_minted_value, quantity_of, to_minted_value, zero,
+}
 use staking_contracts/datums.{
   RewardSetting, StakePoolDatum, StakeProxyDatum, TimeLockDatum,
   to_time_lock_datum,
@@ -57,8 +62,30 @@ fn is_proper_locking_tx(
     time_lock_output.value
       |> quantity_of(datum.policy_id, datum.asset_name)
 
-  //Ensure that the owner of the proxy is also the owner of the time lock
-  let correct_owner = time_lock_datum.owner == datum.owner
+  //Find minted stake key
+  let minted = from_minted_value(ctx.transaction.mint)
+
+  let minted_policy_id = bytearray.take(time_lock_datum.time_lock_key, 28)
+
+  let minted_asset_name = bytearray.drop(time_lock_datum.time_lock_key, 28)
+
+  //Make sure the minted key is using the expected policy_id
+  let correct_stake_key_policy_id = minted_policy_id == datum.key_policy_id
+
+  //Make sure only 1 is minted
+  let correct_key_minted =
+    quantity_of(minted, minted_policy_id, minted_asset_name) == 1
+
+  //Make sure the key is minted into the users' wallet
+  expect Some(_key_minted_to_user) =
+    ctx.transaction.outputs
+      |> find(
+           fn(o) {
+             quantity_of(o.value, minted_policy_id, minted_asset_name) == 1 && o.address.payment_credential == VerificationKeyCredential(
+               datum.owner,
+             )
+           },
+         )
 
   //Ensure locked tokens is staked + reward
   let correct_locked_tokens =
@@ -67,7 +94,7 @@ fn is_proper_locking_tx(
   and {
     //Ensure only one time lock output to avoid unexpected results
     must_have_exactly_one_output(time_lock_outputs)?,
-    correct_owner?,
+    correct_stake_key_policy_id?,
     //Make sure the time lock does not lock the assets too long
     must_be_locked_until(
       ctx.transaction.validity_range,
@@ -76,6 +103,7 @@ fn is_proper_locking_tx(
       hour_millis,
     )?,
     correct_locked_tokens?,
+    correct_key_minted?,
   }
 }
 
@@ -97,12 +125,13 @@ test stake_proxy_lock_funds() {
       time_lock_hash: #"00000000000000000000000000000000000000000000000000000000",
       policy_id: #"00000000000000000000000000000000000000000000000000000000",
       asset_name: #"000000000000",
+      key_policy_id: #"00000000000000000000000000000000000000000000000000000011",
     }
 
   let time_lock_datum =
     TimeLockDatum {
       lock_until: 86400000,
-      owner: #"00000000000000000000000000000000000000000000000000000000",
+      time_lock_key: #"00000000000000000000000000000000000000000000000000000011",
     }
   let time_lock_data: Data = time_lock_datum
 
@@ -172,6 +201,15 @@ test stake_proxy_lock_funds() {
            ),
     }
 
+  let user_output =
+    Output {
+      address: from_verification_key(stake_proxy_datum.owner),
+      value: from_lovelace(100000)
+        |> add(stake_proxy_datum.key_policy_id, #"", 1),
+      reference_script: None,
+      datum: NoDatum,
+    }
+
   //datum: stake_pool_datum,
   //reference_script: None,
   let time_lock_output =
@@ -199,7 +237,10 @@ test stake_proxy_lock_funds() {
              Transaction {
                ..transaction,
                inputs: [stake_pool_input, stake_proxy_input],
-               outputs: [new_stake_pool_output, time_lock_output],
+               outputs: [new_stake_pool_output, time_lock_output, user_output],
+               mint: zero()
+                 |> add(stake_proxy_datum.key_policy_id, #"", 1)
+                 |> to_minted_value(),
                validity_range: Interval {
                  lower_bound: IntervalBound {
                    bound_type: Finite(0),

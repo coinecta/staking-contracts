@@ -1,14 +1,15 @@
-use aiken/interval.{Finite}
-use aiken/transaction.{ScriptContext, Spend, ValidityRange}
-use staking_contracts/datums.{POSIXTime, TimeLockDatum}
-use staking_contracts/utils.{must_be_signed_by}
+use aiken/bytearray.{drop, take}
+use aiken/transaction.{ScriptContext, Spend}
+use aiken/transaction/value.{MintedValue, from_minted_value, quantity_of}
+use staking_contracts/datums.{TimeLockDatum}
+use staking_contracts/utils.{must_start_after}
 
 validator {
   fn time_lock(datum: TimeLockDatum, _redeemer: Void, ctx: ScriptContext) {
     when ctx.purpose is {
       //This utxo can only be spend by its owner and after the unlock time has passed
       Spend(_) -> and {
-          must_be_signed_by(ctx.transaction, datum.owner),
+          key_is_burned(ctx.transaction.mint, datum.time_lock_key),
           must_start_after(ctx.transaction.validity_range, datum.lock_until),
         }
       _ -> False
@@ -16,21 +17,8 @@ validator {
   }
 }
 
-fn must_start_after(range: ValidityRange, lock_expiration_time: POSIXTime) {
-  when range.lower_bound.bound_type is {
-    Finite(tx_earliest_time) -> lock_expiration_time <= tx_earliest_time
-    _ -> False
-  }
-}
-
-test must_start_after_succeed_when_lower_bound_is_after() {
-  must_start_after(interval.after(2), 1)
-}
-
-test must_start_after_succeed_when_lower_bound_is_equal() {
-  must_start_after(interval.after(2), 2)
-}
-
-test must_start_after_fail_when_lower_bound_is_before() {
-  !must_start_after(interval.after(2), 3)
+fn key_is_burned(minted: MintedValue, key: ByteArray) {
+  let minted_value = from_minted_value(minted)
+  let minted_amount = minted_value |> quantity_of(take(key, 28), drop(key, 28))
+  minted_amount == -1
 }

@@ -1,19 +1,17 @@
 use aiken/hash.{Blake2b_224, Hash}
+use aiken/time.{PosixTime}
 use aiken/transaction/credential.{Script, VerificationKey}
 use aiken/transaction/value.{AssetName, PolicyId}
 
 pub type TimeLockDatum {
   /// POSIX time in second, e.g. 1672843961000
-  lock_until: POSIXTime,
+  lock_until: PosixTime,
   /// Owner's credentials
-  owner: VerificationKeyHash,
+  time_lock_key: ByteArray,
 }
 
 pub type VerificationKeyHash =
   Hash<Blake2b_224, VerificationKey>
-
-pub type POSIXTime =
-  Int
 
 pub type ScriptHash =
   Hash<Blake2b_224, Script>
@@ -42,6 +40,7 @@ pub type StakeProxyDatum {
   time_lock_hash: ScriptHash,
   policy_id: PolicyId,
   asset_name: AssetName,
+  key_policy_id: PolicyId,
 }
 
 pub fn to_stake_pool_datum(data: Data) -> StakePoolDatum {
@@ -73,7 +72,7 @@ test must_cast_to_stake_pool_datum() {
 }
 
 test must_cast_to_time_lock_datum() {
-  let time_lock_datum = TimeLockDatum { lock_until: 0, owner: #"" }
+  let time_lock_datum = TimeLockDatum { lock_until: 0, time_lock_key: #"" }
   let time_lock_data: Data = time_lock_datum
   time_lock_datum == to_time_lock_datum(time_lock_data)
 }

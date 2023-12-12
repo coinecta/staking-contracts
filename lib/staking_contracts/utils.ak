@@ -1,5 +1,6 @@
 use aiken/interval.{Finite}
 use aiken/list.{has, length}
+use aiken/time.{PosixTime}
 use aiken/transaction.{InlineDatum, Output, Transaction, ValidityRange}
 use staking_contracts/datums.{
   StakePoolDatum, TimeLockDatum, VerificationKeyHash, to_time_lock_datum,
@@ -51,20 +52,27 @@ pub fn must_be_locked_until(
   }
 }
 
+pub fn must_start_after(range: ValidityRange, lock_expiration_time: PosixTime) {
+  when range.lower_bound.bound_type is {
+    Finite(tx_earliest_time) -> lock_expiration_time <= tx_earliest_time
+    _ -> False
+  }
+}
+
 test must_have_same_datum_succeed_when_same_datum() {
-  let time_lock_datum_1 = TimeLockDatum { lock_until: 0, owner: #"" }
-  let time_lock_datum_2 = TimeLockDatum { lock_until: 0, owner: #"" }
+  let time_lock_datum_1 = TimeLockDatum { lock_until: 0, time_lock_key: #"" }
+  let time_lock_datum_2 = TimeLockDatum { lock_until: 0, time_lock_key: #"" }
   must_have_same_datum(time_lock_datum_1, time_lock_datum_2)
 }
 
 test must_have_same_datum_fail_when_different_datum() {
-  let time_lock_datum_1 = TimeLockDatum { lock_until: 0, owner: #"" }
-  let time_lock_datum_2 = TimeLockDatum { lock_until: 1, owner: #"" }
+  let time_lock_datum_1 = TimeLockDatum { lock_until: 0, time_lock_key: #"" }
+  let time_lock_datum_2 = TimeLockDatum { lock_until: 1, time_lock_key: #"" }
   !must_have_same_datum(time_lock_datum_1, time_lock_datum_2)
 }
 
 test must_have_same_datum_fail_when_different_datum_type() {
-  let time_lock_datum = TimeLockDatum { lock_until: 0, owner: #"" }
+  let time_lock_datum = TimeLockDatum { lock_until: 0, time_lock_key: #"" }
   let stake_pool_datum =
     StakePoolDatum {
       time_lock_hash: #"",
@@ -82,4 +90,16 @@ test add_percentage_succeed_normal_case() {
 
 test add_percentage_succeed_floored_value() {
   add_percentage(90, 1) == 90
+}
+
+test must_start_after_succeed_when_lower_bound_is_after() {
+  must_start_after(interval.after(2), 1)
+}
+
+test must_start_after_succeed_when_lower_bound_is_equal() {
+  must_start_after(interval.after(2), 2)
+}
+
+test must_start_after_fail_when_lower_bound_is_before() {
+  !must_start_after(interval.after(2), 3)
 }
