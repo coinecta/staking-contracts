@@ -11,8 +11,8 @@ use staking_contracts/datums.{
   TimeLockDatum,
 }
 use staking_contracts/utils.{
-  add_percentage, hour_millis, must_be_locked_until, must_be_signed_by,
-  must_have_exactly_one_output,
+  add_percentage, day_millis, hour_millis, must_be_locked_until,
+  must_be_signed_by, must_have_exactly_one_output,
 }
 
 validator {
@@ -138,9 +138,12 @@ test stake_pool_lock_funds() {
       key_policy_id: #"00000000000000000000000000000000000000000000000000000011",
     }
 
+  let current_time = 0
+  let later_time = 2 * hour_millis
+
   let time_lock_datum =
     TimeLockDatum {
-      lock_until: 86400000,
+      lock_until: current_time + hour_millis + day_millis,
       time_lock_key: #"00000000000000000000000000000000000000000000000000000011",
     }
   let time_lock_data: Data = time_lock_datum
@@ -241,11 +244,11 @@ test stake_pool_lock_funds() {
                outputs: [new_stake_pool_output, time_lock_output],
                validity_range: Interval {
                  lower_bound: IntervalBound {
-                   bound_type: Finite(0),
+                   bound_type: Finite(current_time),
                    is_inclusive: True,
                  },
                  upper_bound: IntervalBound {
-                   bound_type: Finite(3_600_000),
+                   bound_type: Finite(later_time),
                    is_inclusive: True,
                  },
                },

@@ -23,6 +23,7 @@ pub fn add_percentage(amount: Int, percentage: Int) -> Int {
 }
 
 //pub const day_millis = 86_400_000
+
 pub const day_millis = 3_600_000
 
 pub const hour_millis = 3_600_000
@@ -43,13 +44,13 @@ pub fn must_be_locked_until(
       Finite(tx_earliest_time) ->
         tx_earliest_time + days_to_be_locked * day_millis + buffer >= lock_expiration_time
       _ -> False
-    },
+    }?,
     //This ensures assets are locked for at least the required amount as configured in the stake pool
     when range.upper_bound.bound_type is {
       Finite(tx_latest_time) ->
         tx_latest_time + days_to_be_locked * day_millis - buffer <= lock_expiration_time
       _ -> False
-    },
+    }?,
   }
 }
 
@@ -57,7 +58,7 @@ pub fn must_start_after(range: ValidityRange, lock_expiration_time: PosixTime) {
   when range.lower_bound.bound_type is {
     Finite(tx_earliest_time) -> lock_expiration_time <= tx_earliest_time
     _ -> False
-  }
+  }?
 }
 
 test must_have_same_datum_succeed_when_same_datum() {

@@ -4,8 +4,8 @@ use aiken/interval.{Finite, Interval, IntervalBound}
 use aiken/list.{at}
 use aiken/string.{from_int}
 use aiken/transaction.{
-  InlineDatum, Input, Mint, Output, OutputReference, ScriptContext, Spend,
-  Transaction, TransactionId,
+  InlineDatum, Input, Mint, Output, OutputReference, ScriptContext, Transaction,
+  TransactionId,
 }
 use aiken/transaction/credential.{Address, ScriptCredential}
 use aiken/transaction/value.{
@@ -158,7 +158,7 @@ test stake_key_mint_mint() {
           from_string(@"-"),
           concat(
             from_string(from_int(3_600_000 / 100000)),
-            concat(from_string(@"0"), from_string(@"0000000000")),
+            concat(from_string(@"0"), from_string(@"000000000000")),
           ),
         ),
       ),
