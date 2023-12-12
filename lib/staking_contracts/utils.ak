@@ -22,7 +22,8 @@ pub fn add_percentage(amount: Int, percentage: Int) -> Int {
   amount * ( 100 + percentage ) / 100
 }
 
-pub const day_millis = 86_400_000
+//pub const day_millis = 86_400_000
+pub const day_millis = 3_600_000
 
 pub const hour_millis = 3_600_000
 
