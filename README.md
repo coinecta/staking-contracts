@@ -8,6 +8,8 @@ allows the user to move to another wallet (for example due to loss of seed
 phrase of the original wallet) or even sell the stake key to someone else on a
 secondary market such as jpg.store.
 
+![Staking overview](img/coinecta-staking-overview.png)
+
 ## Main requirements
 
 These are the main requirements the contracts need to fulfil:
@@ -99,11 +101,15 @@ Main validations during a mint:
 | ----------- | ----- | ----------- |
 | user wallet |       | stake_proxy |
 
+![Create stake proxy](img/coinecta-staking-create-proxy.png)
+
 ### Create Stake Pool
 
 | inputs       | mints | outputs    |
 | ------------ | ----- | ---------- |
 | owner wallet |       | stake_pool |
+
+![Create stake pool](img/coinecta-staking-create-pool.png)
 
 ### Lock stake
 
@@ -114,12 +120,16 @@ Main validations during a mint:
 |             | stake_key_mint + 1 | user wallet                 |
 |             |                    | Off chain operator (change) |
 
+![Lock stake](img/coinecta-staking-lock.png)
+
 ### Unstake
 
 | inputs      | mints              | outputs     |
 | ----------- | ------------------ | ----------- |
 | time_lock   |                    | user wallet |
 | user wallet | stake_key_mint - 1 |             |
+
+![Unstake](img/coinecta-staking-unstake.png)
 
 ## Building
 
