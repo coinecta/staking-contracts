@@ -1,5 +1,8 @@
+use aiken/bytearray
 use aiken/interval.{Finite}
 use aiken/list.{has, length}
+use aiken/math
+use aiken/string
 use aiken/time.{PosixTime}
 use aiken/transaction.{InlineDatum, Output, Transaction, ValidityRange}
 use staking_contracts/datums.{
@@ -59,6 +62,77 @@ pub fn must_start_after(range: ValidityRange, lock_expiration_time: PosixTime) {
     Finite(tx_earliest_time) -> lock_expiration_time <= tx_earliest_time
     _ -> False
   }?
+}
+
+pub fn abbreviated_amount(amount: Int, decimals: Int) -> ByteArray {
+  let amount_dec = amount / math.pow(10, decimals)
+  let quadrillions = amount_dec / 1_000_000_000_000
+  if quadrillions > 0 {
+    if quadrillions > 999 {
+      "***Q"
+    } else {
+      bytearray.from_string(string.concat(string.from_int(quadrillions), @"Q"))
+    }
+  } else {
+    let billions = amount_dec / 1_000_000_000
+    if billions > 0 {
+      bytearray.from_string(string.concat(string.from_int(billions), @"B"))
+    } else {
+      let millions = amount_dec / 1_000_000
+      if millions > 0 {
+        bytearray.from_string(string.concat(string.from_int(millions), @"M"))
+      } else {
+        let thousands = amount_dec / 1_000
+        if thousands > 0 {
+          bytearray.from_string(string.concat(string.from_int(thousands), @"K"))
+        } else {
+          bytearray.from_string(string.from_int(amount_dec))
+        }
+      }
+    }
+  }
+}
+
+test abbreviated_amount_0_point_666_tokens_abreviates_to_0() {
+  let amount = 666_666_666_666
+  let decimals = 12
+  abbreviated_amount(amount, decimals) == "0"
+}
+
+test abbreviated_amount_666_tokens_abreviates_to_666() {
+  let amount = 666_666_666_666
+  let decimals = 9
+  abbreviated_amount(amount, decimals) == "666"
+}
+
+test abbreviated_amount_666_thousand_tokens_abreviates_to_666K() {
+  let amount = 666_666_666_666
+  let decimals = 6
+  abbreviated_amount(amount, decimals) == "666K"
+}
+
+test abbreviated_amount_666_million_tokens_abreviates_to_666M() {
+  let amount = 666_666_666_666
+  let decimals = 3
+  abbreviated_amount(amount, decimals) == "666M"
+}
+
+test abbreviated_amount_666_billion_tokens_abreviates_to_666B() {
+  let amount = 666_666_666_666_000
+  let decimals = 3
+  abbreviated_amount(amount, decimals) == "666B"
+}
+
+test abbreviated_amount_666_quadrillion_tokens_abreviates_to_666Q() {
+  let amount = 666_666_666_666_000_000
+  let decimals = 3
+  abbreviated_amount(amount, decimals) == "666Q"
+}
+
+test abbreviated_amount_ridiculous_amount_should_be_3starQ() {
+  let amount = 666_666_666_666_000_000
+  let decimals = 0
+  abbreviated_amount(amount, decimals) == "***Q"
 }
 
 test must_have_same_datum_succeed_when_same_datum() {
