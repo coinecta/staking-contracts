@@ -77,7 +77,7 @@ test must_have_same_datum_fail_when_different_datum_type() {
   let time_lock_datum = TimeLockDatum { lock_until: 0, time_lock_key: #"" }
   let stake_pool_datum =
     StakePoolDatum {
-      time_lock_hash: #"",
+      decimals: 0,
       reward_settings: [],
       policy_id: #"",
       asset_name: #"",

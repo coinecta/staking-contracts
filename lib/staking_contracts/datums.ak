@@ -17,29 +17,42 @@ pub type ScriptHash =
   Hash<Blake2b_224, Script>
 
 pub type RewardSetting {
+  //Amount of days the tokens need to be locked
   days_locked: Int,
+  //Percentage the user gets as a reward for locking
   percentage_reward: Int,
 }
 
 pub type StakePoolDatum {
-  time_lock_hash: ScriptHash,
+  //List of rewardsettings that are enabled by the stakepool owner
   reward_settings: List<RewardSetting>,
+  //Policy id of the asset in the stake pool
   policy_id: PolicyId,
+  //Asset name of the asset in the stake pool
   asset_name: AssetName,
+  //Owner key that is allowed to change settings on the pool or remove unused assets
   owner: VerificationKeyHash,
+  //Decimals for the asset in the stake pool (used for showing staked amount in stake key)
+  decimals: Int,
 }
 
 pub type StakePoolRedeemer {
+  //Index of the reward setting to be used ina locking tx.
   reward_index: Int,
 }
 
 pub type StakeProxyDatum {
+  //Users' key which should receive the stake key and which is allowed to refund the stake request
   owner: VerificationKeyHash,
+  //Amount of days the user wished to lock his tokens
   days_locked: Int,
+  //The reward percentage the user expects for locking his tokens
   reward_percentage: Int,
-  time_lock_hash: ScriptHash,
+  //Policy id of the asset the user wants to stake
   policy_id: PolicyId,
+  //Asset name of the asset the user wants to stake
   asset_name: AssetName,
+  //Policy id the user expects the stake key to be minted with
   key_policy_id: PolicyId,
 }
 
@@ -53,19 +66,14 @@ pub fn to_time_lock_datum(data: Data) -> TimeLockDatum {
   my_datum
 }
 
-// pub fn to_datum(data: Data) -> Datum {
-//   expect my_datum: Datum = data
-//   my_datum
-// }
-
 test must_cast_to_stake_pool_datum() {
   let stake_pool_datum =
     StakePoolDatum {
-      time_lock_hash: #"",
       reward_settings: [],
       policy_id: #"",
       asset_name: #"",
       owner: #"",
+      decimals: 0,
     }
   let stake_pool_data: Data = stake_pool_datum
   stake_pool_datum == to_stake_pool_datum(stake_pool_data)

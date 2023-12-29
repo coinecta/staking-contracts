@@ -113,7 +113,7 @@ test stake_key_mint_mint() {
   let stake_pool_datum =
     StakePoolDatum {
       owner: #"00000000000000000000000000000000000000000000000000000000",
-      time_lock_hash: #"00000000000000000000000000000000000000000000000000000000",
+      decimals: 0,
       policy_id: #"00000000000000000000000000000000000000000000000000000000",
       asset_name: #"000000000000",
       reward_settings: [RewardSetting { days_locked: 1, percentage_reward: 1 }],

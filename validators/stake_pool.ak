@@ -38,6 +38,8 @@ fn is_proper_locking_tx(
   redeemer: StakePoolRedeemer,
   ctx: ScriptContext,
 ) {
+  let time_lock_hash =
+    #"279be0d97e5212b58066c25a86bd89e41a4b83705070e4414175b68f"
   //Find the input guarded by this validator
   expect Some(self) =
     ctx.transaction.inputs
@@ -53,7 +55,7 @@ fn is_proper_locking_tx(
   //The output needs to include a utxo with time lock validator
   let time_lock_outputs =
     ctx.transaction.outputs
-      |> transaction.find_script_outputs(datum.time_lock_hash)
+      |> transaction.find_script_outputs(time_lock_hash)
   expect Some(time_lock) = time_lock_outputs |> at(0)
 
   //We use the reward setting as indicated by the submitter of the transaction
@@ -121,7 +123,7 @@ test stake_pool_lock_funds() {
   let stake_pool_datum =
     StakePoolDatum {
       owner: #"00000000000000000000000000000000000000000000000000000000",
-      time_lock_hash: #"00000000000000000000000000000000000000000000000000000000",
+      decimals: 0,
       policy_id: #"00000000000000000000000000000000000000000000000000000000",
       asset_name: #"000000000000",
       reward_settings: [RewardSetting { days_locked: 1, percentage_reward: 1 }],
@@ -132,7 +134,6 @@ test stake_pool_lock_funds() {
       owner: #"00000000000000000000000000000000000000000000000000000000",
       days_locked: 1,
       reward_percentage: 1,
-      time_lock_hash: #"00000000000000000000000000000000000000000000000000000000",
       policy_id: #"00000000000000000000000000000000000000000000000000000000",
       asset_name: #"000000000000",
       key_policy_id: #"00000000000000000000000000000000000000000000000000000011",
@@ -220,7 +221,7 @@ test stake_pool_lock_funds() {
     Output {
       address: Address {
         payment_credential: ScriptCredential(
-          #"00000000000000000000000000000000000000000000000000000000",
+          #"279be0d97e5212b58066c25a86bd89e41a4b83705070e4414175b68f",
         ),
         stake_credential: None,
       },
@@ -257,4 +258,3 @@ test stake_pool_lock_funds() {
     }
   stake_pool(stake_pool_datum, redeemer, context)
 }
-/// Owner's credentials
