@@ -93,6 +93,69 @@ pub fn abbreviated_amount(amount: Int, decimals: Int) -> ByteArray {
   }
 }
 
+//Taken from https://stackoverflow.com/questions/7136385/calculate-day-number-from-an-unix-timestamp-in-a-math-way
+pub fn time_to_date_string(time: PosixTime) -> ByteArray {
+  let s = time / 1000
+  let z = s / 86400 + 719468
+  let era =
+    if z >= 0 {
+      z
+    } else {
+      z - 146096
+    } / 146097
+  let doe = z - era * 146097
+  let yoe = ( doe - doe / 1460 + doe / 36524 - doe / 146096 ) / 365
+  let y = yoe + era * 400
+  let doy = doe - ( 365 * yoe + yoe / 4 - yoe / 100 )
+  let mp = ( 5 * doy + 2 ) / 153
+  let d = doy - ( 153 * mp + 2 ) / 5 + 1
+  let m =
+    mp + if mp < 10 {
+      3
+    } else {
+      -9
+    }
+  let adjusted_y =
+    y + if m <= 2 {
+      1
+    } else {
+      0
+    }
+  let year_string = string.from_int(adjusted_y)
+  let month_string =
+    string.concat(
+      if m < 10 {
+        @"0"
+      } else {
+        @""
+      },
+      string.from_int(m),
+    )
+  let day_string =
+    string.concat(
+      if d < 10 {
+        @"0"
+      } else {
+        @""
+      },
+      string.from_int(d),
+    )
+  string.to_bytearray(string.join([year_string, month_string, day_string], @""))
+    |> bytearray.drop(2)
+}
+
+test time_to_date_string_correct_regular_date() {
+  time_to_date_string(1703851519000) == "231229"
+}
+
+test time_to_date_string_correct_leap_day_date() {
+  time_to_date_string(1709208319000) == "240229"
+}
+
+test time_to_date_string_correct_day_less_than_10_date() {
+  time_to_date_string(1706875519000) == "240202"
+}
+
 test abbreviated_amount_0_point_666_tokens_abreviates_to_0() {
   let amount = 666_666_666_666
   let decimals = 12
