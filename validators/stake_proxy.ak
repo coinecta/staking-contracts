@@ -1,4 +1,5 @@
 use aiken/bytearray
+use aiken/dict
 use aiken/interval.{Finite, Interval, IntervalBound}
 use aiken/list.{find}
 use aiken/transaction.{
@@ -12,7 +13,7 @@ use aiken/transaction/value.{
   add, from_lovelace, from_minted_value, quantity_of, to_minted_value, zero,
 }
 use staking_contracts/datums.{
-  RewardSetting, StakePoolDatum, StakeProxyDatum, TimeLockDatum,
+  LockDatum, RewardSetting, StakePoolDatum, StakeProxyDatum, TimeLockDatum,
   to_time_lock_datum,
 }
 use staking_contracts/utils.{
@@ -67,9 +68,10 @@ fn is_proper_locking_tx(
   //Find minted stake key
   let minted = from_minted_value(ctx.transaction.mint)
 
-  let minted_policy_id = bytearray.take(time_lock_datum.time_lock_key, 28)
+  let minted_policy_id = bytearray.take(time_lock_datum.extra.time_lock_key, 28)
 
-  let minted_asset_name = bytearray.drop(time_lock_datum.time_lock_key, 28)
+  let minted_asset_name =
+    bytearray.drop(time_lock_datum.extra.time_lock_key, 28)
 
   //Make sure the minted key is using the expected policy_id
   let correct_stake_key_policy_id = minted_policy_id == datum.key_policy_id
@@ -134,9 +136,14 @@ test stake_proxy_lock_funds() {
 
   let time_lock_datum =
     TimeLockDatum {
-      lock_until: current_time + hour_millis + day_millis,
-      time_lock_key: #"00000000000000000000000000000000000000000000000000000011",
+      metadata: dict.new(),
+      version: 1,
+      extra: LockDatum {
+        lock_until: current_time + hour_millis + day_millis,
+        time_lock_key: #"00000000000000000000000000000000000000000000000000000011",
+      },
     }
+
   let time_lock_data: Data = time_lock_datum
 
   let redeemer = Void

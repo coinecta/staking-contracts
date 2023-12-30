@@ -1,23 +1,30 @@
-use aiken/bytearray.{concat, from_string}
-use aiken/cbor.{diagnostic}
+use aiken/bytearray.{concat, drop, from_string, take}
+use aiken/cbor.{diagnostic, serialise}
+use aiken/dict
 use aiken/interval.{Finite, Interval, IntervalBound}
-use aiken/list.{at}
-use aiken/string.{from_int}
+use aiken/list.{at, find}
+use aiken/math
+use aiken/string
 use aiken/transaction.{
   InlineDatum, Input, Mint, Output, OutputReference, ScriptContext, Transaction,
   TransactionId,
 }
 use aiken/transaction/credential.{Address, ScriptCredential}
 use aiken/transaction/value.{
-  add, flatten, from_lovelace, from_minted_value, to_minted_value, zero,
+  add, flatten, from_lovelace, from_minted_value, quantity_of, to_minted_value,
+  zero,
 }
 use staking_contracts/datums.{
-  RewardSetting, StakePoolDatum, to_stake_pool_datum, to_time_lock_datum,
+  RewardSetting, StakePoolDatum, reference_prefix, stake_key_prefix,
+  to_stake_pool_datum, to_time_lock_datum,
 }
-use staking_contracts/utils.{must_start_after}
+use staking_contracts/utils.{
+  abbreviated_amount, must_start_after, time_to_date_string,
+}
 
 type StakeKeyMintRedeemer {
   stake_pool_index: Int,
+  time_lock_index: Int,
 }
 
 validator {
@@ -31,60 +38,93 @@ validator {
         trace @"gmm"
         let minted = from_minted_value(ctx.transaction.mint) |> flatten()
         trace diagnostic(minted)
-        expect Some(minted_token) = minted |> at(0)
-        when minted_token.3rd is {
+        expect Some(reference_nft) =
+          minted |> find(fn(mt) { take(mt.2nd, 4) == reference_prefix })
+        expect Some(stake_key) =
+          minted |> find(fn(mt) { take(mt.2nd, 4) == stake_key_prefix })
+        let asset_name = drop(reference_nft.2nd, 4)
+        let correct_stake_key_name = drop(stake_key.2nd, 4) == asset_name
+        when reference_nft.3rd is {
           1 -> {
             trace @"mint"
             //token minted
             expect Some(stake_pool_input) =
               ctx.transaction.inputs |> at(redeemer.stake_pool_index)
-            trace diagnostic(stake_pool_input)
+            expect Some(time_lock_output) =
+              ctx.transaction.outputs |> at(redeemer.time_lock_index)
             expect InlineDatum(stake_pool_input_datum) =
               stake_pool_input.output.datum
-            trace diagnostic(stake_pool_input_datum)
             let stake_pool_datum = to_stake_pool_datum(stake_pool_input_datum)
+
+            expect InlineDatum(time_lock_output_datum) = time_lock_output.datum
+            let time_lock_datum = to_time_lock_datum(time_lock_output_datum)
             expect Finite(tx_latest_time) =
               ctx.transaction.validity_range.upper_bound.bound_type
-            //Ms second precision not needed, time bytearray length 8 
-            let time_bytes =
-              bytearray.from_string(string.from_int(tx_latest_time / 100000))
+            let time_bytes = serialise(tx_latest_time)
             let output_ref_index_bytes =
               bytearray.from_string(
                 string.from_int(stake_pool_input.output_reference.output_index),
               )
-            // Asset name for stake key:
-            // s-{staked_asset}-{stake_time}{stake_pool_input tx id & index}
             let TransactionId(stake_pool_input_transaction_id) =
               stake_pool_input.output_reference.transaction_id
+
+            let raw_amount =
+              time_lock_output.value
+                |> quantity_of(
+                     stake_pool_datum.policy_id,
+                     stake_pool_datum.asset_name,
+                   )
+
+            let amount = raw_amount / math.pow(10, stake_pool_datum.decimals)
             let proper_asset_name =
-              bytearray.concat(
-                #"732d",
-                bytearray.concat(
-                  bytearray.take(stake_pool_datum.asset_name, 8),
-                  bytearray.concat(
-                    #"2d",
-                    bytearray.concat(
-                      time_bytes,
-                      bytearray.concat(
-                        output_ref_index_bytes,
-                        bytearray.from_string(
-                          bytearray.to_hex(
-                            bytearray.take(stake_pool_input_transaction_id, 6),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
+              list.foldl(
+                [
+                  time_bytes,
+                  output_ref_index_bytes,
+                  stake_pool_input_transaction_id |> take(17),
+                ],
+                "",
+                fn(el, sum) { bytearray.concat(sum, el) },
               )
-            trace diagnostic(minted_token.2nd)
-            trace diagnostic(proper_asset_name)
-            let correct_mint = minted_token.2nd == proper_asset_name
-            correct_mint?
+            let proper_meta_name =
+              list.foldl(
+                [
+                  "Stake Key ",
+                  abbreviated_amount(amount, 0),
+                  " ",
+                  stake_pool_datum.asset_name,
+                  " - ",
+                  time_to_date_string(time_lock_datum.extra.lock_until),
+                ],
+                "",
+                fn(el, sum) { bytearray.concat(sum, el) },
+              )
+            let correct_reference_name = asset_name == proper_asset_name
+            let no_extra_mint = list.length(minted) == 2
+            let correct_meta_name =
+              dict.get(time_lock_datum.metadata, "name") == Some(
+                proper_meta_name,
+              )
+            let correct_image =
+              dict.get(time_lock_datum.metadata, "image") == Some(
+                "https://my-stake-key-img.com/img.png",
+              )
+            //to do: add decimals
+            let correct_meta_amount =
+              dict.get(time_lock_datum.metadata, "locked_amount") == Some(
+                bytearray.from_string(string.from_int(amount)),
+              )
+            and {
+              correct_stake_key_name?,
+              correct_reference_name?,
+              no_extra_mint?,
+              correct_meta_name?,
+              correct_image?,
+              correct_meta_amount?,
+            }
           }
           -1 -> {
-            let burned_unit =
-              bytearray.concat(minted_token.1st, minted_token.2nd)
+            let burned_unit = bytearray.concat(stake_key.1st, stake_key.2nd)
             //token burned
             expect Some(time_lock_input) =
               ctx.transaction.inputs |> at(redeemer.stake_pool_index)
@@ -92,13 +132,18 @@ validator {
               time_lock_input.output.datum
             let time_lock_datum = to_time_lock_datum(time_lock_input_datum)
             let correct_token_burned =
-              time_lock_datum.time_lock_key == burned_unit
+              time_lock_datum.extra.time_lock_key == burned_unit
+            let no_extra_burn = list.length(minted) == 2
+            let both_burned = stake_key.3rd == reference_nft.3rd
             and {
               must_start_after(
                 ctx.transaction.validity_range,
-                time_lock_datum.lock_until,
+                time_lock_datum.extra.lock_until,
               )?,
               correct_token_burned?,
+              no_extra_burn?,
+              both_burned?,
+              correct_stake_key_name?,
             }
           }
           _ -> False
@@ -149,22 +194,22 @@ test stake_key_mint_mint() {
       output: stake_pool_output,
     }
 
-  let stake_key =
-    concat(
-      from_string(@"s-"),
-      concat(
-        #"000000000000",
-        concat(
-          from_string(@"-"),
-          concat(
-            from_string(from_int(3_600_000 / 100000)),
-            concat(from_string(@"0"), from_string(@"000000000000")),
-          ),
-        ),
-      ),
+  let asset_name =
+    list.foldl(
+      [
+        serialise(3_600_000),
+        from_string(@"0"),
+        #"00000000000000000000000000000000000000000000000000000000" |> take(17),
+      ],
+      "",
+      fn(el, sum) { bytearray.concat(sum, el) },
     )
 
-  let stake_key_mint_redeemer = StakeKeyMintRedeemer { stake_pool_index: 0 }
+  let stake_key = concat(stake_key_prefix, asset_name)
+  let reference_nft = concat(reference_prefix, asset_name)
+
+  let stake_key_mint_redeemer =
+    StakeKeyMintRedeemer { stake_pool_index: 0, time_lock_index: 0 }
   let context =
     ScriptContext {
       purpose: Mint(#"00000000000000000000000000000000000000000000000000000011"),
@@ -178,6 +223,11 @@ test stake_key_mint_mint() {
                  |> add(
                       #"00000000000000000000000000000000000000000000000000000011",
                       stake_key,
+                      1,
+                    )
+                 |> add(
+                      #"00000000000000000000000000000000000000000000000000000011",
+                      reference_nft,
                       1,
                     )
                  |> to_minted_value(),

@@ -1,13 +1,27 @@
+use aiken/dict.{Dict}
 use aiken/hash.{Blake2b_224, Hash}
 use aiken/time.{PosixTime}
 use aiken/transaction/credential.{Script, VerificationKey}
 use aiken/transaction/value.{AssetName, PolicyId}
 
-pub type TimeLockDatum {
+pub const reference_prefix = #"000643b0"
+
+pub const stake_key_prefix = #"000de140"
+
+pub type LockDatum {
   /// POSIX time in second, e.g. 1672843961000
   lock_until: PosixTime,
   /// Owner's credentials
   time_lock_key: ByteArray,
+}
+
+pub type TimeLockDatum {
+  //Metadata fields holding name, img etc for the stake key following CIP-25
+  metadata: Dict<ByteArray, ByteArray>,
+  //Following on chain metadata standard in CIP-68
+  version: Int,
+  //Data defining the time the assets are to be locked and how to unlock
+  extra: LockDatum,
 }
 
 pub type VerificationKeyHash =
@@ -80,7 +94,12 @@ test must_cast_to_stake_pool_datum() {
 }
 
 test must_cast_to_time_lock_datum() {
-  let time_lock_datum = TimeLockDatum { lock_until: 0, time_lock_key: #"" }
+  let time_lock_datum =
+    TimeLockDatum {
+      metadata: dict.new(),
+      version: 1,
+      extra: LockDatum { lock_until: 0, time_lock_key: #"" },
+    }
   let time_lock_data: Data = time_lock_datum
   time_lock_datum == to_time_lock_datum(time_lock_data)
 }

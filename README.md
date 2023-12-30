@@ -69,29 +69,19 @@ Main validations to be done in unstake transaction:
 ### stake_key_mint
 
 This minting policy checks which assets are locked and when they unlock. On top
-of that it ensures the asset name is unique.
+of that it ensures the asset name is unique and that a reference nft is minted
+into the timelock to support CIP 68
 
-The expected template for the stake key asset name is:
-
-```
-s{staked amount}{staked asset name}{unlock date}{time}{stake_pool output_index}{stake_pool tx_hash}
-```
-
-| Component               | length | description                                                                                                   |
-| ----------------------- | ------ | ------------------------------------------------------------------------------------------------------------- |
-| prefix s                | 1      |                                                                                                               |
-| staked amount           | 4      | Staked amount including reward, max 3 digits + letter (for example 345K)                                      |
-| staked asset name       | 6      | First 6 characters of the staked asset                                                                        |
-| unlock date             | 6      | Date on which stake is unlocked, format YYMMDD                                                                |
-| time                    | 4      | 8 most significant digits of upper validity of transaction, encoded as hex values (so 2 digits form one byte) |
-| stake_pool_output_index | 1      | Output index of the stake_pool that is part of the transactions' input                                        |
-| stake_pool tx_hash      | 10     | First characters of the hex representation of the tx_hash of the stake_pool input                             |
-| total                   | 32     |                                                                                                               |
+The on chain asset name will consist of the minting time joined with the
+transaction id of the stake pool input. Together this ensures uniqueness of the
+asset. Of course this does not give a humanly readable name, so we store
+metadata in the time lock to allow for a good representation in wallets etc. The
+metadata is also checked to ensure it matches what is being locked.
 
 Main validations during a mint:
 
 - Asset name follows the expected template
-- Only 1 NFT is minted
+- Only 1 stake key and 1 corresponding reference NFT is minted
 
 ## Transactions
 

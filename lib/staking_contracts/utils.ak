@@ -1,4 +1,5 @@
 use aiken/bytearray
+use aiken/dict
 use aiken/interval.{Finite}
 use aiken/list.{has, length}
 use aiken/math
@@ -6,7 +7,8 @@ use aiken/string
 use aiken/time.{PosixTime}
 use aiken/transaction.{InlineDatum, Output, Transaction, ValidityRange}
 use staking_contracts/datums.{
-  StakePoolDatum, TimeLockDatum, VerificationKeyHash, to_time_lock_datum,
+  LockDatum, StakePoolDatum, TimeLockDatum, VerificationKeyHash,
+  to_time_lock_datum,
 }
 
 pub fn must_have_exactly_one_output(outputs: List<Output>) {
@@ -40,7 +42,8 @@ pub fn must_be_locked_until(
   buffer: Int,
 ) {
   expect InlineDatum(time_lock_datum) = time_lock.datum
-  let lock_expiration_time = to_time_lock_datum(time_lock_datum).lock_until
+  let lock_expiration_time =
+    to_time_lock_datum(time_lock_datum).extra.lock_until
   and {
     //This ensures for the user that the assets are not locked longer than expected
     when range.lower_bound.bound_type is {
@@ -199,19 +202,44 @@ test abbreviated_amount_ridiculous_amount_should_be_3starQ() {
 }
 
 test must_have_same_datum_succeed_when_same_datum() {
-  let time_lock_datum_1 = TimeLockDatum { lock_until: 0, time_lock_key: #"" }
-  let time_lock_datum_2 = TimeLockDatum { lock_until: 0, time_lock_key: #"" }
+  let time_lock_datum_1 =
+    TimeLockDatum {
+      metadata: dict.new(),
+      version: 1,
+      extra: LockDatum { lock_until: 0, time_lock_key: #"" },
+    }
+  let time_lock_datum_2 =
+    TimeLockDatum {
+      metadata: dict.new(),
+      version: 1,
+      extra: LockDatum { lock_until: 0, time_lock_key: #"" },
+    }
   must_have_same_datum(time_lock_datum_1, time_lock_datum_2)
 }
 
 test must_have_same_datum_fail_when_different_datum() {
-  let time_lock_datum_1 = TimeLockDatum { lock_until: 0, time_lock_key: #"" }
-  let time_lock_datum_2 = TimeLockDatum { lock_until: 1, time_lock_key: #"" }
+  let time_lock_datum_1 =
+    TimeLockDatum {
+      metadata: dict.new(),
+      version: 1,
+      extra: LockDatum { lock_until: 0, time_lock_key: #"" },
+    }
+  let time_lock_datum_2 =
+    TimeLockDatum {
+      metadata: dict.new(),
+      version: 1,
+      extra: LockDatum { lock_until: 1, time_lock_key: #"" },
+    }
   !must_have_same_datum(time_lock_datum_1, time_lock_datum_2)
 }
 
 test must_have_same_datum_fail_when_different_datum_type() {
-  let time_lock_datum = TimeLockDatum { lock_until: 0, time_lock_key: #"" }
+  let time_lock_datum =
+    TimeLockDatum {
+      metadata: dict.new(),
+      version: 1,
+      extra: LockDatum { lock_until: 0, time_lock_key: #"" },
+    }
   let stake_pool_datum =
     StakePoolDatum {
       decimals: 0,

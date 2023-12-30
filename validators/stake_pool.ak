@@ -1,3 +1,4 @@
+use aiken/dict
 use aiken/interval.{Finite, Interval, IntervalBound}
 use aiken/list.{at}
 use aiken/transaction.{
@@ -7,7 +8,7 @@ use aiken/transaction.{
 use aiken/transaction/credential.{Address, ScriptCredential}
 use aiken/transaction/value.{add, from_lovelace}
 use staking_contracts/datums.{
-  RewardSetting, StakePoolDatum, StakePoolRedeemer, StakeProxyDatum,
+  LockDatum, RewardSetting, StakePoolDatum, StakePoolRedeemer, StakeProxyDatum,
   TimeLockDatum,
 }
 use staking_contracts/utils.{
@@ -144,8 +145,12 @@ test stake_pool_lock_funds() {
 
   let time_lock_datum =
     TimeLockDatum {
-      lock_until: current_time + hour_millis + day_millis,
-      time_lock_key: #"00000000000000000000000000000000000000000000000000000011",
+      metadata: dict.new(),
+      version: 1,
+      extra: LockDatum {
+        lock_until: current_time + hour_millis + day_millis,
+        time_lock_key: #"00000000000000000000000000000000000000000000000000000011",
+      },
     }
   let time_lock_data: Data = time_lock_datum
 
