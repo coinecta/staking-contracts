@@ -15,11 +15,12 @@ use aiken/transaction/value.{
   zero,
 }
 use staking_contracts/datums.{
-  RewardSetting, StakePoolDatum, reference_prefix, stake_key_prefix,
-  to_stake_pool_datum, to_time_lock_datum,
+  LockDatum, RewardSetting, StakePoolDatum, TimeLockDatum, reference_prefix,
+  stake_key_prefix, to_stake_pool_datum, to_time_lock_datum,
 }
 use staking_contracts/utils.{
-  abbreviated_amount, must_start_after, time_to_date_string,
+  abbreviated_amount, day_millis, hour_millis, must_start_after,
+  time_to_date_string,
 }
 
 type StakeKeyMintRedeemer {
@@ -155,6 +156,81 @@ validator {
 }
 
 test stake_key_mint_mint() {
+  let current_time = 0
+  let later_time = 2 * hour_millis
+
+  let asset_name =
+    list.foldl(
+      [
+        serialise(3_600_000),
+        from_string(@"0"),
+        #"00000000000000000000000000000000000000000000000000000000" |> take(17),
+      ],
+      "",
+      fn(el, sum) { bytearray.concat(sum, el) },
+    )
+
+  let stake_key = concat(stake_key_prefix, asset_name)
+  let reference_nft = concat(reference_prefix, asset_name)
+
+  let meta_name =
+    list.foldl(
+      [
+        "Stake Key ",
+        abbreviated_amount(1_010_000, 0),
+        " ",
+        #"000000000000",
+        " - ",
+        time_to_date_string(current_time + hour_millis + day_millis),
+      ],
+      "",
+      fn(el, sum) { bytearray.concat(sum, el) },
+    )
+
+  let time_lock_datum =
+    TimeLockDatum {
+      metadata: dict.new()
+        |> dict.insert("name", meta_name, bytearray.compare)
+        |> dict.insert(
+             "image",
+             "https://my-stake-key-img.com/img.png",
+             bytearray.compare,
+           )
+        |> dict.insert(
+             "locked_amount",
+             bytearray.from_string(string.from_int(1_010_000)),
+             bytearray.compare,
+           ),
+      version: 1,
+      extra: LockDatum {
+        lock_until: current_time + hour_millis + day_millis,
+        time_lock_key: #"00000000000000000000000000000000000000000000000000000011",
+      },
+    }
+
+  let time_lock_data: Data = time_lock_datum
+  let time_lock_output =
+    Output {
+      address: Address {
+        payment_credential: ScriptCredential(
+          #"279be0d97e5212b58066c25a86bd89e41a4b83705070e4414175b68f",
+        ),
+        stake_credential: None,
+      },
+      value: from_lovelace(2000000)
+        |> add(
+             #"00000000000000000000000000000000000000000000000000000000",
+             #"000000000000",
+             1_010_000,
+           )
+        |> add(
+             #"00000000000000000000000000000000000000000000000000000011",
+             reference_nft,
+             1,
+           ),
+      datum: InlineDatum(time_lock_data),
+      reference_script: None,
+    }
   let stake_pool_datum =
     StakePoolDatum {
       owner: #"00000000000000000000000000000000000000000000000000000000",
@@ -194,20 +270,6 @@ test stake_key_mint_mint() {
       output: stake_pool_output,
     }
 
-  let asset_name =
-    list.foldl(
-      [
-        serialise(3_600_000),
-        from_string(@"0"),
-        #"00000000000000000000000000000000000000000000000000000000" |> take(17),
-      ],
-      "",
-      fn(el, sum) { bytearray.concat(sum, el) },
-    )
-
-  let stake_key = concat(stake_key_prefix, asset_name)
-  let reference_nft = concat(reference_prefix, asset_name)
-
   let stake_key_mint_redeemer =
     StakeKeyMintRedeemer { stake_pool_index: 0, time_lock_index: 0 }
   let context =
@@ -218,7 +280,7 @@ test stake_key_mint_mint() {
              Transaction {
                ..transaction,
                inputs: [stake_pool_input],
-               outputs: [],
+               outputs: [time_lock_output],
                mint: zero()
                  |> add(
                       #"00000000000000000000000000000000000000000000000000000011",
