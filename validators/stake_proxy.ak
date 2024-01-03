@@ -18,7 +18,8 @@ use staking_contracts/datums.{
 }
 use staking_contracts/utils.{
   add_percentage, day_millis, hour_millis, must_be_locked_until,
-  must_be_signed_by, must_have_exactly_one_output, time_lock_hash,
+  must_be_signed_by, must_have_exactly_one_output, stake_pool_hash,
+  stake_proxy_hash, time_lock_hash,
 }
 
 validator {
@@ -152,9 +153,7 @@ test stake_proxy_lock_funds() {
   let stake_pool_output =
     Output {
       address: Address {
-        payment_credential: ScriptCredential(
-          #"00000000000000000000000000000000000000000000000000000010",
-        ),
+        payment_credential: ScriptCredential(stake_pool_hash),
         stake_credential: None,
       },
       value: from_lovelace(2000000)
@@ -179,9 +178,7 @@ test stake_proxy_lock_funds() {
   let stake_proxy_output =
     Output {
       address: Address {
-        payment_credential: ScriptCredential(
-          #"00000000000000000000000000000000000000000000000000000020",
-        ),
+        payment_credential: ScriptCredential(stake_proxy_hash),
         stake_credential: None,
       },
       value: from_lovelace(2000000)
@@ -225,9 +222,7 @@ test stake_proxy_lock_funds() {
   let time_lock_output =
     Output {
       address: Address {
-        payment_credential: ScriptCredential(
-          #"279be0d97e5212b58066c25a86bd89e41a4b83705070e4414175b68f",
-        ),
+        payment_credential: ScriptCredential(time_lock_hash),
         stake_credential: None,
       },
       value: from_lovelace(2000000)

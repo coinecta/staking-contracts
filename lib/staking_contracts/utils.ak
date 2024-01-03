@@ -34,7 +34,13 @@ pub const day_millis = 86_400_000
 pub const hour_millis = 3_600_000
 
 pub const time_lock_hash =
-  #"279be0d97e5212b58066c25a86bd89e41a4b83705070e4414175b68f"
+  #"550cc5a9682bcbbe5583f1006624000032b4d8f4ddd6f37623462ff9"
+
+pub const stake_pool_hash =
+  #"7a8a80f13e296da14c3c4e379e1c270ffabb2740a28e983acf75275f"
+
+pub const stake_proxy_hash =
+  #"dc404ed342f5bc8344c8e2d21da7a45b8e0f70b5364ee4fda57dae75"
 
 //Ensure that the time_lock output is set to expire after a set amount of days, with a certain buffer
 //to allow for a realistic transaction validity range

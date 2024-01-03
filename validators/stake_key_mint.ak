@@ -20,8 +20,8 @@ use staking_contracts/datums.{
   to_time_lock_datum,
 }
 use staking_contracts/utils.{
-  abbreviated_amount, day_millis, hour_millis, must_start_after,
-  time_to_date_string,
+  abbreviated_amount, day_millis, hour_millis, must_start_after, stake_pool_hash,
+  stake_proxy_hash, time_lock_hash, time_to_date_string,
 }
 
 type StakeKeyMintRedeemer {
@@ -60,12 +60,18 @@ validator {
             //The stake pool input
             expect Some(stake_pool_input) =
               ctx.transaction.inputs |> at(redeemer.stake_pool_index)
+            expect ScriptCredential(stake_pool_cred) =
+              stake_pool_input.output.address.payment_credential
             //The stake proxy input
             expect Some(stake_proxy_input) =
               ctx.transaction.inputs |> at(redeemer.stake_proxy_index)
+            expect ScriptCredential(stake_proxy_cred) =
+              stake_proxy_input.output.address.payment_credential
             //The time lock output
             expect Some(time_lock_output) =
               ctx.transaction.outputs |> at(redeemer.time_lock_index)
+            expect ScriptCredential(time_lock_cred) =
+              time_lock_output.address.payment_credential
 
             //Fetch inlinedatum from stakepool input and cast to StakePoolDatum
             expect InlineDatum(stake_pool_input_datum) =
@@ -159,6 +165,12 @@ validator {
               dict.get(time_lock_datum.metadata, "locked_amount") == Some(
                 bytearray.from_string(string.from_int(amount)),
               )
+
+            //Verify script hashes
+            let correct_stake_pool = stake_pool_hash == stake_pool_cred
+            let correct_stake_proxy = stake_proxy_hash == stake_proxy_cred
+            let correct_time_lock = time_lock_hash == time_lock_cred
+
             and {
               correct_stake_key_name?,
               correct_reference_name?,
@@ -166,6 +178,9 @@ validator {
               correct_meta_name?,
               correct_image?,
               correct_meta_amount?,
+              correct_stake_pool?,
+              correct_stake_proxy?,
+              correct_time_lock?,
             }
           }
           //Burn scenario (unlock of locked tokens)
@@ -278,9 +293,7 @@ test stake_key_mint_mint() {
   let stake_proxy_output =
     Output {
       address: Address {
-        payment_credential: ScriptCredential(
-          #"00000000000000000000000000000000000000000000000000000020",
-        ),
+        payment_credential: ScriptCredential(stake_proxy_hash),
         stake_credential: None,
       },
       value: from_lovelace(2000000)
@@ -302,9 +315,7 @@ test stake_key_mint_mint() {
   let time_lock_output =
     Output {
       address: Address {
-        payment_credential: ScriptCredential(
-          #"279be0d97e5212b58066c25a86bd89e41a4b83705070e4414175b68f",
-        ),
+        payment_credential: ScriptCredential(time_lock_hash),
         stake_credential: None,
       },
       value: from_lovelace(2000000)
@@ -339,9 +350,7 @@ test stake_key_mint_mint() {
   let stake_pool_output =
     Output {
       address: Address {
-        payment_credential: ScriptCredential(
-          #"00000000000000000000000000000000000000000000000000000010",
-        ),
+        payment_credential: ScriptCredential(stake_pool_hash),
         stake_credential: None,
       },
       value: from_lovelace(2000000)
