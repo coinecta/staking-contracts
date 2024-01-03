@@ -3,8 +3,8 @@
 The Coinecta staking contracts support the requirement of being able to allow
 users to lock tokens for certain time periods and get a percentage reward for
 it. Because these locking periods can potentially be long we bind the time lock
-to a unique NFT (the stake key) minted during the locking transaction. This
-allows the user to move to another wallet (for example due to loss of seed
+to a unique CIP-68 NFT (the stake key) minted during the locking transaction.
+This allows the user to move to another wallet (for example due to loss of seed
 phrase of the original wallet) or even sell the stake key to someone else on a
 secondary market such as jpg.store.
 
@@ -74,7 +74,7 @@ into the timelock to support CIP 68
 
 The on chain asset name will consist of the minting time joined with the
 transaction id of the stake pool input. Together this ensures uniqueness of the
-asset. Of course this does not give a humanly readable name, so we store
+asset. Of course this does not give a humanly readable name, so we store CIP-68
 metadata in the time lock to allow for a good representation in wallets etc. The
 metadata is also checked to ensure it matches what is being locked.
 
@@ -103,21 +103,21 @@ Main validations during a mint:
 
 ### Lock stake
 
-| inputs      | mints              | outputs                     |
-| ----------- | ------------------ | --------------------------- |
-| stake_pool  |                    | stake_pool                  |
-| stake_proxy |                    | time_lock                   |
-|             | stake_key_mint + 1 | user wallet                 |
-|             |                    | Off chain operator (change) |
+| inputs      | mints            | outputs                     |
+| ----------- | ---------------- | --------------------------- |
+| stake_pool  |                  | stake_pool                  |
+| stake_proxy | reference nft +1 | time_lock                   |
+|             | stake_key + 1    | user wallet                 |
+|             |                  | Off chain operator (change) |
 
 ![Lock stake](img/coinecta-staking-lock.png)
 
 ### Unstake
 
-| inputs      | mints              | outputs     |
-| ----------- | ------------------ | ----------- |
-| time_lock   |                    | user wallet |
-| user wallet | stake_key_mint - 1 |             |
+| inputs      | mints             | outputs     |
+| ----------- | ----------------- | ----------- |
+| time_lock   | reference nft - 1 | user wallet |
+| user wallet | stake_key - 1     |             |
 
 ![Unstake](img/coinecta-staking-unstake.png)
 
