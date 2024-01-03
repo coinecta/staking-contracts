@@ -13,7 +13,7 @@ use staking_contracts/datums.{
 }
 use staking_contracts/utils.{
   add_percentage, day_millis, hour_millis, must_be_locked_until,
-  must_be_signed_by, must_have_exactly_one_output,
+  must_be_signed_by, must_have_exactly_one_output, time_lock_hash,
 }
 
 validator {
@@ -39,8 +39,6 @@ fn is_proper_locking_tx(
   redeemer: StakePoolRedeemer,
   ctx: ScriptContext,
 ) {
-  let time_lock_hash =
-    #"279be0d97e5212b58066c25a86bd89e41a4b83705070e4414175b68f"
   //Find the input guarded by this validator
   expect Some(self) =
     ctx.transaction.inputs
@@ -138,6 +136,7 @@ test stake_pool_lock_funds() {
       policy_id: #"00000000000000000000000000000000000000000000000000000000",
       asset_name: #"000000000000",
       key_policy_id: #"00000000000000000000000000000000000000000000000000000011",
+      key_img_url: "https://my-stake-key-img.com/img.png",
     }
 
   let current_time = 0

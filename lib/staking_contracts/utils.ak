@@ -27,11 +27,14 @@ pub fn add_percentage(amount: Int, percentage: Int) -> Int {
   amount * ( 100 + percentage ) / 100
 }
 
-//pub const day_millis = 86_400_000
+pub const day_millis = 86_400_000
 
-pub const day_millis = 3_600_000
+//pub const day_millis = 3_600_000
 
 pub const hour_millis = 3_600_000
+
+pub const time_lock_hash =
+  #"279be0d97e5212b58066c25a86bd89e41a4b83705070e4414175b68f"
 
 //Ensure that the time_lock output is set to expire after a set amount of days, with a certain buffer
 //to allow for a realistic transaction validity range

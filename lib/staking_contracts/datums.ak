@@ -68,10 +68,17 @@ pub type StakeProxyDatum {
   asset_name: AssetName,
   //Policy id the user expects the stake key to be minted with
   key_policy_id: PolicyId,
+  //Url to img the user wants to use as their stake key nft
+  key_img_url: ByteArray,
 }
 
 pub fn to_stake_pool_datum(data: Data) -> StakePoolDatum {
   expect my_datum: StakePoolDatum = data
+  my_datum
+}
+
+pub fn to_stake_proxy_datum(data: Data) -> StakeProxyDatum {
+  expect my_datum: StakeProxyDatum = data
   my_datum
 }
 

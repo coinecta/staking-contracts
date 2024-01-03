@@ -1,5 +1,5 @@
 use aiken/bytearray.{concat, drop, from_string, take}
-use aiken/cbor.{diagnostic, serialise}
+use aiken/cbor.{serialise}
 use aiken/dict
 use aiken/interval.{Finite, Interval, IntervalBound}
 use aiken/list.{at, find}
@@ -15,8 +15,9 @@ use aiken/transaction/value.{
   zero,
 }
 use staking_contracts/datums.{
-  LockDatum, RewardSetting, StakePoolDatum, TimeLockDatum, reference_prefix,
-  stake_key_prefix, to_stake_pool_datum, to_time_lock_datum,
+  LockDatum, RewardSetting, StakePoolDatum, StakeProxyDatum, TimeLockDatum,
+  reference_prefix, stake_key_prefix, to_stake_pool_datum, to_stake_proxy_datum,
+  to_time_lock_datum,
 }
 use staking_contracts/utils.{
   abbreviated_amount, day_millis, hour_millis, must_start_after,
@@ -26,6 +27,7 @@ use staking_contracts/utils.{
 type StakeKeyMintRedeemer {
   stake_pool_index: Int,
   time_lock_index: Int,
+  stake_proxy_index: Int,
 }
 
 validator {
@@ -36,32 +38,58 @@ validator {
   ) {
     when ctx.purpose is {
       Mint(_policy_id) -> {
-        trace @"gmm"
+        //Retrieve all minted assets into an array
         let minted = from_minted_value(ctx.transaction.mint) |> flatten()
-        trace diagnostic(minted)
+        //Look for the reference nft (CIP-68)
         expect Some(reference_nft) =
           minted |> find(fn(mt) { take(mt.2nd, 4) == reference_prefix })
+
+        //Look for the stake key (CIP-68)
         expect Some(stake_key) =
           minted |> find(fn(mt) { take(mt.2nd, 4) == stake_key_prefix })
+
+        //Asset name without CIP-68 prefix
         let asset_name = drop(reference_nft.2nd, 4)
+
+        //Ensure the stake key has the same asset name as the reference nft
         let correct_stake_key_name = drop(stake_key.2nd, 4) == asset_name
+
         when reference_nft.3rd is {
+          //Mint scenario (tokens are to be locked)
           1 -> {
-            trace @"mint"
-            //token minted
+            //The stake pool input
             expect Some(stake_pool_input) =
               ctx.transaction.inputs |> at(redeemer.stake_pool_index)
+            //The stake proxy input
+            expect Some(stake_proxy_input) =
+              ctx.transaction.inputs |> at(redeemer.stake_proxy_index)
+            //The time lock output
             expect Some(time_lock_output) =
               ctx.transaction.outputs |> at(redeemer.time_lock_index)
+
+            //Fetch inlinedatum from stakepool input and cast to StakePoolDatum
             expect InlineDatum(stake_pool_input_datum) =
               stake_pool_input.output.datum
             let stake_pool_datum = to_stake_pool_datum(stake_pool_input_datum)
 
+            //Fetch inlinedatum from stakeproxy input and cast to StakeProxyDatum
+            expect InlineDatum(stake_proxy_input_datum) =
+              stake_proxy_input.output.datum
+            let stake_proxy_datum =
+              to_stake_proxy_datum(stake_proxy_input_datum)
+
+            //Fetch inlinedatum from timelock output and cast to TimeLockDatum
             expect InlineDatum(time_lock_output_datum) = time_lock_output.datum
             let time_lock_datum = to_time_lock_datum(time_lock_output_datum)
+
+            //Fetch latest valid time for this transaction
             expect Finite(tx_latest_time) =
               ctx.transaction.validity_range.upper_bound.bound_type
+
+            //We use the serialised time as part of the unique asset name
             let time_bytes = serialise(tx_latest_time)
+
+            //The second part of the unique asset name is the output reference index+transaction id of the stake pool input
             let output_ref_index_bytes =
               bytearray.from_string(
                 string.from_int(stake_pool_input.output_reference.output_index),
@@ -69,6 +97,7 @@ validator {
             let TransactionId(stake_pool_input_transaction_id) =
               stake_pool_input.output_reference.transaction_id
 
+            //The amount of tokens to be locked (no decimals taken into account)
             let raw_amount =
               time_lock_output.value
                 |> quantity_of(
@@ -76,7 +105,10 @@ validator {
                      stake_pool_datum.asset_name,
                    )
 
+            //Amount with decimals, this is only to be used in metadata for the stake key
             let amount = raw_amount / math.pow(10, stake_pool_datum.decimals)
+
+            //Construct the proper asset name using the unique components
             let proper_asset_name =
               list.foldl(
                 [
@@ -87,6 +119,8 @@ validator {
                 "",
                 fn(el, sum) { bytearray.concat(sum, el) },
               )
+
+            //Construct the proper metadata nft name
             let proper_meta_name =
               list.foldl(
                 [
@@ -100,17 +134,27 @@ validator {
                 "",
                 fn(el, sum) { bytearray.concat(sum, el) },
               )
+
+            //Validations
+            //Make sure the asset name is as expected
             let correct_reference_name = asset_name == proper_asset_name
+
+            //Only allow mint of 2 assets (reference and stake key)
             let no_extra_mint = list.length(minted) == 2
+
+            //Ensure the metadata token name is as expected
             let correct_meta_name =
               dict.get(time_lock_datum.metadata, "name") == Some(
                 proper_meta_name,
               )
+
+            //Ensure the token image is as requested by the user
             let correct_image =
               dict.get(time_lock_datum.metadata, "image") == Some(
-                "https://my-stake-key-img.com/img.png",
+                stake_proxy_datum.key_img_url,
               )
-            //to do: add decimals
+
+            //Make sure an extra field is present in the metadata showing the tokens locked by the key
             let correct_meta_amount =
               dict.get(time_lock_datum.metadata, "locked_amount") == Some(
                 bytearray.from_string(string.from_int(amount)),
@@ -124,17 +168,27 @@ validator {
               correct_meta_amount?,
             }
           }
+          //Burn scenario (unlock of locked tokens)
           -1 -> {
+            //Full asset unit
             let burned_unit = bytearray.concat(stake_key.1st, stake_key.2nd)
-            //token burned
+            //The time lock input
             expect Some(time_lock_input) =
-              ctx.transaction.inputs |> at(redeemer.stake_pool_index)
+              ctx.transaction.inputs |> at(redeemer.time_lock_index)
+
+            //The inline datum belonging to the time lock inptu cast to TimeLockDatum
             expect InlineDatum(time_lock_input_datum) =
               time_lock_input.output.datum
             let time_lock_datum = to_time_lock_datum(time_lock_input_datum)
+
+            //Ensure the tokens burned match the timelock key
             let correct_token_burned =
               time_lock_datum.extra.time_lock_key == burned_unit
+
+            //Make sure no extra tokens are burned
             let no_extra_burn = list.length(minted) == 2
+
+            //Make sure both tokens are burned
             let both_burned = stake_key.3rd == reference_nft.3rd
             and {
               must_start_after(
@@ -157,7 +211,6 @@ validator {
 
 test stake_key_mint_mint() {
   let current_time = 0
-  let later_time = 2 * hour_millis
 
   let asset_name =
     list.foldl(
@@ -206,6 +259,43 @@ test stake_key_mint_mint() {
         lock_until: current_time + hour_millis + day_millis,
         time_lock_key: #"00000000000000000000000000000000000000000000000000000011",
       },
+    }
+
+  let stake_proxy_datum =
+    StakeProxyDatum {
+      owner: #"00000000000000000000000000000000000000000000000000000000",
+      days_locked: 1,
+      reward_percentage: 1,
+      policy_id: #"00000000000000000000000000000000000000000000000000000000",
+      asset_name: #"000000000000",
+      key_policy_id: #"00000000000000000000000000000000000000000000000000000011",
+      key_img_url: "https://my-stake-key-img.com/img.png",
+    }
+
+  let stake_proxy_output_reference =
+    OutputReference { transaction_id: TransactionId(""), output_index: 1 }
+
+  let stake_proxy_output =
+    Output {
+      address: Address {
+        payment_credential: ScriptCredential(
+          #"00000000000000000000000000000000000000000000000000000020",
+        ),
+        stake_credential: None,
+      },
+      value: from_lovelace(2000000)
+        |> add(
+             #"00000000000000000000000000000000000000000000000000000000",
+             #"000000000000",
+             1_000_000,
+           ),
+      datum: InlineDatum(stake_proxy_datum),
+      reference_script: None,
+    }
+  let stake_proxy_input =
+    Input {
+      output_reference: stake_proxy_output_reference,
+      output: stake_proxy_output,
     }
 
   let time_lock_data: Data = time_lock_datum
@@ -271,7 +361,11 @@ test stake_key_mint_mint() {
     }
 
   let stake_key_mint_redeemer =
-    StakeKeyMintRedeemer { stake_pool_index: 0, time_lock_index: 0 }
+    StakeKeyMintRedeemer {
+      stake_pool_index: 0,
+      time_lock_index: 0,
+      stake_proxy_index: 1,
+    }
   let context =
     ScriptContext {
       purpose: Mint(#"00000000000000000000000000000000000000000000000000000011"),
@@ -279,7 +373,7 @@ test stake_key_mint_mint() {
         |> fn(transaction) {
              Transaction {
                ..transaction,
-               inputs: [stake_pool_input],
+               inputs: [stake_pool_input, stake_proxy_input],
                outputs: [time_lock_output],
                mint: zero()
                  |> add(
