@@ -14,23 +14,47 @@ use staking_contracts/datums.{
 use staking_contracts/utils.{
   add_percentage, day_millis, hour_millis, must_be_locked_until,
   must_be_signed_by, must_have_exactly_one_output, stake_pool_hash,
-  stake_proxy_hash, time_lock_hash,
+  stake_proxy_hash,
 }
 
-validator {
+validator(time_lock_hash: ByteArray) {
   fn stake_pool(
     datum: StakePoolDatum,
     redeemer: StakePoolRedeemer,
     ctx: ScriptContext,
-  ) {
-    when ctx.purpose is {
-      //Ensure the utxo is spent by either the owner or a valid locking tx
-      Spend(my_output_reference) -> or {
-          must_be_signed_by(ctx.transaction, datum.owner)?,
-          is_proper_locking_tx(my_output_reference, datum, redeemer, ctx)?,
-        }
-      _ -> False
+  ) -> Bool {
+    or {
+      update_transaction(datum, ctx)?,
+      lock_transaction(datum, redeemer, ctx, time_lock_hash)?,
     }
+  }
+}
+
+fn update_transaction(datum: StakePoolDatum, ctx: ScriptContext) -> Bool {
+  when ctx.purpose is {
+    //Ensure the utxo is spent by either the owner or a valid locking tx
+    Spend(_) -> must_be_signed_by(ctx.transaction, datum.owner)?
+    _ -> False
+  }
+}
+
+fn lock_transaction(
+  datum: StakePoolDatum,
+  redeemer: StakePoolRedeemer,
+  ctx: ScriptContext,
+  time_lock_hash: ByteArray,
+) -> Bool {
+  when ctx.purpose is {
+    //Ensure the utxo is spent by either the owner or a valid locking tx
+    Spend(my_output_reference) ->
+      is_proper_locking_tx(
+        my_output_reference,
+        datum,
+        redeemer,
+        ctx,
+        time_lock_hash,
+      )?
+    _ -> False
   }
 }
 
@@ -39,6 +63,7 @@ fn is_proper_locking_tx(
   datum: StakePoolDatum,
   redeemer: StakePoolRedeemer,
   ctx: ScriptContext,
+  time_lock_hash: ByteArray,
 ) {
   //Find the input guarded by this validator
   expect Some(self) =
@@ -120,6 +145,8 @@ fn is_proper_locking_tx(
 }
 
 test stake_pool_lock_funds() {
+  let time_lock_hash =
+    #"550cc5a9682bcbbe5583f1006624000032b4d8f4ddd6f37623462ff9"
   let stake_pool_datum =
     StakePoolDatum {
       owner: #"00000000000000000000000000000000000000000000000000000000",
@@ -255,5 +282,5 @@ test stake_pool_lock_funds() {
              }
            },
     }
-  stake_pool(stake_pool_datum, redeemer, context)
+  lock_transaction(stake_pool_datum, redeemer, context, time_lock_hash)
 }
