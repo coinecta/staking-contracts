@@ -1,5 +1,6 @@
 use aiken/dict.{Dict}
 use aiken/hash.{Blake2b_224, Hash}
+use aiken/math/rational.{Rational}
 use aiken/time.{PosixTime}
 use aiken/transaction/credential.{Script, VerificationKey}
 use aiken/transaction/value.{AssetName, PolicyId}
@@ -34,7 +35,7 @@ pub type RewardSetting {
   //Amount of days the tokens need to be locked
   days_locked: Int,
   //Percentage the user gets as a reward for locking
-  percentage_reward: Int,
+  reward_multiplier: Rational,
 }
 
 pub type StakePoolDatum {
@@ -61,7 +62,7 @@ pub type StakeProxyDatum {
   //Amount of days the user wished to lock his tokens
   days_locked: Int,
   //The reward percentage the user expects for locking his tokens
-  reward_percentage: Int,
+  reward_multiplier: Rational,
   //Policy id of the asset the user wants to stake
   policy_id: PolicyId,
   //Asset name of the asset the user wants to stake

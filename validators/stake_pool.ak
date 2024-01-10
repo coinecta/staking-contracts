@@ -1,6 +1,7 @@
 use aiken/dict
 use aiken/interval.{Finite, Interval, IntervalBound}
 use aiken/list.{at}
+use aiken/math/rational
 use aiken/transaction.{
   InlineDatum, Input, Output, OutputReference, ScriptContext, Spend, Transaction,
   TransactionId,
@@ -12,9 +13,8 @@ use staking_contracts/datums.{
   TimeLockDatum,
 }
 use staking_contracts/utils.{
-  add_percentage, day_millis, hour_millis, must_be_locked_until,
-  must_be_signed_by, must_have_exactly_one_output, stake_pool_hash,
-  stake_proxy_hash,
+  add_reward, day_millis, hour_millis, must_be_locked_until, must_be_signed_by,
+  must_have_exactly_one_output,
 }
 
 validator(time_lock_hash: ByteArray) {
@@ -109,10 +109,7 @@ fn is_proper_locking_tx(
 
   //Ensure the locked amount matches the reward setting
   let correct_locked_amount =
-    locked_amount == add_percentage(
-      staked_amount,
-      reward_setting.percentage_reward,
-    )
+    locked_amount == add_reward(staked_amount, reward_setting.reward_multiplier)
 
   //Make sure no other assets have been altered in the stake pool output compared to the input
   let correct_output_value =
@@ -147,20 +144,29 @@ fn is_proper_locking_tx(
 test stake_pool_lock_funds() {
   let time_lock_hash =
     #"550cc5a9682bcbbe5583f1006624000032b4d8f4ddd6f37623462ff9"
+
+  let stake_pool_hash =
+    #"7a8a80f13e296da14c3c4e379e1c270ffabb2740a28e983acf75275f"
+
+  let stake_proxy_hash =
+    #"dc404ed342f5bc8344c8e2d21da7a45b8e0f70b5364ee4fda57dae75"
+  expect Some(reward) = rational.new(1, 100)
   let stake_pool_datum =
     StakePoolDatum {
       owner: #"00000000000000000000000000000000000000000000000000000000",
       decimals: 0,
       policy_id: #"00000000000000000000000000000000000000000000000000000000",
       asset_name: #"000000000000",
-      reward_settings: [RewardSetting { days_locked: 1, percentage_reward: 1 }],
+      reward_settings: [
+        RewardSetting { days_locked: 1, reward_multiplier: reward },
+      ],
     }
 
   let stake_proxy_datum =
     StakeProxyDatum {
       owner: #"00000000000000000000000000000000000000000000000000000000",
       days_locked: 1,
-      reward_percentage: 1,
+      reward_multiplier: reward,
       policy_id: #"00000000000000000000000000000000000000000000000000000000",
       asset_name: #"000000000000",
       key_policy_id: #"00000000000000000000000000000000000000000000000000000011",
