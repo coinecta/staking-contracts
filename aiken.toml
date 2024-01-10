@@ -12,3 +12,8 @@ platform = "github"
 name = "aiken-lang/stdlib"
 version = "1.7.0"
 source = "github"
+
+[[dependencies]]
+name = "SundaeSwap-finance/aicone"
+version = "main"
+source = "github"

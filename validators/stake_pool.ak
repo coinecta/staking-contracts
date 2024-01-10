@@ -13,9 +13,9 @@ use staking_contracts/datums.{
   TimeLockDatum,
 }
 use staking_contracts/utils.{
-  add_reward, hour_millis, must_be_locked_until, must_be_signed_by,
-  must_have_exactly_one_output,
+  add_reward, hour_millis, must_be_locked_until, must_have_exactly_one_output,
 }
+use sundae/multisig.{Signature, satisfied}
 
 validator(time_lock_hash: ByteArray) {
   fn stake_pool(
@@ -33,7 +33,13 @@ validator(time_lock_hash: ByteArray) {
 fn update_transaction(datum: StakePoolDatum, ctx: ScriptContext) -> Bool {
   when ctx.purpose is {
     //Ensure the utxo is spent by either the owner or a valid locking tx
-    Spend(_) -> must_be_signed_by(ctx.transaction, datum.owner)?
+    Spend(_) ->
+      satisfied(
+        datum.owner,
+        ctx.transaction.extra_signatories,
+        ctx.transaction.validity_range,
+        ctx.transaction.withdrawals,
+      )?
     _ -> False
   }
 }
@@ -153,7 +159,9 @@ test stake_pool_lock_funds() {
   expect Some(reward) = rational.new(1, 100)
   let stake_pool_datum =
     StakePoolDatum {
-      owner: #"00000000000000000000000000000000000000000000000000000000",
+      owner: Signature(
+        #"00000000000000000000000000000000000000000000000000000000",
+      ),
       decimals: 0,
       policy_id: #"00000000000000000000000000000000000000000000000000000000",
       asset_name: #"000000000000",
