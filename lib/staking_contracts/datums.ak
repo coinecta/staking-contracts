@@ -32,8 +32,8 @@ pub type ScriptHash =
   Hash<Blake2b_224, Script>
 
 pub type RewardSetting {
-  //Amount of days the tokens need to be locked
-  days_locked: Int,
+  //Amount of milliseconds the tokens need to be locked
+  ms_locked: Int,
   //Percentage the user gets as a reward for locking
   reward_multiplier: Rational,
 }
@@ -59,8 +59,8 @@ pub type StakePoolRedeemer {
 pub type StakeProxyDatum {
   //Users' key which should receive the stake key and which is allowed to refund the stake request
   owner: VerificationKeyHash,
-  //Amount of days the user wished to lock his tokens
-  days_locked: Int,
+  //Amount of milliseconds the user wished to lock his tokens
+  ms_locked: Int,
   //The reward percentage the user expects for locking his tokens
   reward_multiplier: Rational,
   //Policy id of the asset the user wants to stake

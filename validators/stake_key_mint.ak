@@ -21,8 +21,7 @@ use staking_contracts/datums.{
   to_time_lock_datum,
 }
 use staking_contracts/utils.{
-  abbreviated_amount, day_millis, hour_millis, must_start_after,
-  time_to_date_string,
+  abbreviated_amount, hour_millis, must_start_after, time_to_date_string,
 }
 
 type StakeKeyMintRedeemer {
@@ -309,7 +308,7 @@ test lock_transaction_lock() {
         " ",
         #"000000000000",
         " - ",
-        time_to_date_string(current_time + hour_millis + day_millis),
+        time_to_date_string(current_time + hour_millis + 86_400_000),
       ],
       "",
       fn(el, sum) { bytearray.concat(sum, el) },
@@ -331,7 +330,7 @@ test lock_transaction_lock() {
            ),
       version: 1,
       extra: LockDatum {
-        lock_until: current_time + hour_millis + day_millis,
+        lock_until: current_time + hour_millis + 86_400_000,
         time_lock_key: #"00000000000000000000000000000000000000000000000000000011",
       },
     }
@@ -340,7 +339,7 @@ test lock_transaction_lock() {
   let stake_proxy_datum =
     StakeProxyDatum {
       owner: #"00000000000000000000000000000000000000000000000000000000",
-      days_locked: 1,
+      ms_locked: 86_400_000,
       reward_multiplier: reward,
       policy_id: #"00000000000000000000000000000000000000000000000000000000",
       asset_name: #"000000000000",
@@ -400,7 +399,7 @@ test lock_transaction_lock() {
       policy_id: #"00000000000000000000000000000000000000000000000000000000",
       asset_name: #"000000000000",
       reward_settings: [
-        RewardSetting { days_locked: 1, reward_multiplier: reward },
+        RewardSetting { ms_locked: 86_400_000, reward_multiplier: reward },
       ],
     }
   let stake_pool_output_reference =

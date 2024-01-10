@@ -18,7 +18,7 @@ use staking_contracts/datums.{
   to_time_lock_datum,
 }
 use staking_contracts/utils.{
-  add_reward, day_millis, hour_millis, must_be_locked_until, must_be_signed_by,
+  add_reward, hour_millis, must_be_locked_until, must_be_signed_by,
   must_have_exactly_one_output,
 }
 
@@ -115,7 +115,7 @@ fn is_proper_locking_tx(
     must_be_locked_until(
       ctx.transaction.validity_range,
       time_lock_output,
-      datum.days_locked,
+      datum.ms_locked,
       hour_millis,
     )?,
     correct_locked_tokens?,
@@ -141,14 +141,14 @@ test stake_proxy_lock_funds() {
       policy_id: #"00000000000000000000000000000000000000000000000000000000",
       asset_name: #"000000000000",
       reward_settings: [
-        RewardSetting { days_locked: 1, reward_multiplier: reward },
+        RewardSetting { ms_locked: 86_400_000, reward_multiplier: reward },
       ],
     }
 
   let stake_proxy_datum =
     StakeProxyDatum {
       owner: #"00000000000000000000000000000000000000000000000000000000",
-      days_locked: 1,
+      ms_locked: 86_400_000,
       reward_multiplier: reward,
       policy_id: #"00000000000000000000000000000000000000000000000000000000",
       asset_name: #"000000000000",
@@ -164,7 +164,7 @@ test stake_proxy_lock_funds() {
       metadata: dict.new(),
       version: 1,
       extra: LockDatum {
-        lock_until: current_time + hour_millis + day_millis,
+        lock_until: current_time + hour_millis + 86_400_000,
         time_lock_key: #"00000000000000000000000000000000000000000000000000000011",
       },
     }
