@@ -23,6 +23,7 @@ use staking_contracts/datums.{
 use staking_contracts/utils.{
   abbreviated_amount, hour_millis, must_start_after, time_to_date_string,
 }
+use sundae/multisig.{Signature}
 
 type StakeKeyMintRedeemer {
   stake_pool_index: Int,
@@ -394,7 +395,9 @@ test lock_transaction_lock() {
     }
   let stake_pool_datum =
     StakePoolDatum {
-      owner: #"00000000000000000000000000000000000000000000000000000000",
+      owner: Signature(
+        #"00000000000000000000000000000000000000000000000000000000",
+      ),
       decimals: 0,
       policy_id: #"00000000000000000000000000000000000000000000000000000000",
       asset_name: #"000000000000",

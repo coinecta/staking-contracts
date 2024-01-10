@@ -11,6 +11,7 @@ use staking_contracts/datums.{
   LockDatum, StakePoolDatum, TimeLockDatum, VerificationKeyHash,
   to_time_lock_datum,
 }
+use sundae/multisig.{Signature}
 
 pub fn must_have_exactly_one_output(outputs: List<Output>) {
   length(outputs) == 1
@@ -248,7 +249,7 @@ test must_have_same_datum_fail_when_different_datum_type() {
       reward_settings: [],
       policy_id: #"",
       asset_name: #"",
-      owner: #"",
+      owner: Signature(#""),
     }
   !must_have_same_datum(time_lock_datum, stake_pool_datum)
 }

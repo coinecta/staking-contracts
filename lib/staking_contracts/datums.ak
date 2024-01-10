@@ -4,6 +4,7 @@ use aiken/math/rational.{Rational}
 use aiken/time.{PosixTime}
 use aiken/transaction/credential.{Script, VerificationKey}
 use aiken/transaction/value.{AssetName, PolicyId}
+use sundae/multisig.{MultisigScript, Signature}
 
 pub const reference_prefix = #"000643b0"
 
@@ -46,7 +47,7 @@ pub type StakePoolDatum {
   //Asset name of the asset in the stake pool
   asset_name: AssetName,
   //Owner key that is allowed to change settings on the pool or remove unused assets
-  owner: VerificationKeyHash,
+  owner: MultisigScript,
   //Decimals for the asset in the stake pool (used for showing staked amount in stake key)
   decimals: Int,
 }
@@ -94,7 +95,7 @@ test must_cast_to_stake_pool_datum() {
       reward_settings: [],
       policy_id: #"",
       asset_name: #"",
-      owner: #"",
+      owner: Signature(#""),
       decimals: 0,
     }
   let stake_pool_data: Data = stake_pool_datum

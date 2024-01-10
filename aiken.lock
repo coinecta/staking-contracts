@@ -6,8 +6,19 @@ name = "aiken-lang/stdlib"
 version = "1.7.0"
 source = "github"
 
+[[requirements]]
+name = "SundaeSwap-finance/aicone"
+version = "main"
+source = "github"
+
 [[packages]]
 name = "aiken-lang/stdlib"
 version = "1.7.0"
+requirements = []
+source = "github"
+
+[[packages]]
+name = "SundaeSwap-finance/aicone"
+version = "main"
 requirements = []
 source = "github"

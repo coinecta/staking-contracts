@@ -21,6 +21,7 @@ use staking_contracts/utils.{
   add_reward, hour_millis, must_be_locked_until, must_be_signed_by,
   must_have_exactly_one_output,
 }
+use sundae/multisig.{Signature}
 
 validator(time_lock_hash: ByteArray) {
   fn stake_proxy(
@@ -136,7 +137,9 @@ test stake_proxy_lock_funds() {
   expect Some(reward) = rational.new(1, 100)
   let stake_pool_datum =
     StakePoolDatum {
-      owner: #"00000000000000000000000000000000000000000000000000000000",
+      owner: Signature(
+        #"00000000000000000000000000000000000000000000000000000000",
+      ),
       decimals: 0,
       policy_id: #"00000000000000000000000000000000000000000000000000000000",
       asset_name: #"000000000000",
