@@ -4,6 +4,7 @@ use aiken/dict
 use aiken/interval.{Finite, Interval, IntervalBound}
 use aiken/list.{at, find}
 use aiken/math
+use aiken/math/rational
 use aiken/string
 use aiken/transaction.{
   InlineDatum, Input, Mint, Output, OutputReference, ScriptContext, Transaction,
@@ -335,11 +336,12 @@ test lock_transaction_lock() {
       },
     }
 
+  expect Some(reward) = rational.new(1, 100)
   let stake_proxy_datum =
     StakeProxyDatum {
       owner: #"00000000000000000000000000000000000000000000000000000000",
       days_locked: 1,
-      reward_percentage: 1,
+      reward_multiplier: reward,
       policy_id: #"00000000000000000000000000000000000000000000000000000000",
       asset_name: #"000000000000",
       key_policy_id: #"00000000000000000000000000000000000000000000000000000011",
@@ -397,7 +399,9 @@ test lock_transaction_lock() {
       decimals: 0,
       policy_id: #"00000000000000000000000000000000000000000000000000000000",
       asset_name: #"000000000000",
-      reward_settings: [RewardSetting { days_locked: 1, percentage_reward: 1 }],
+      reward_settings: [
+        RewardSetting { days_locked: 1, reward_multiplier: reward },
+      ],
     }
   let stake_pool_output_reference =
     OutputReference {

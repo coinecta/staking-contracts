@@ -3,6 +3,7 @@ use aiken/dict
 use aiken/interval.{Finite}
 use aiken/list.{has, length}
 use aiken/math
+use aiken/math/rational.{Rational}
 use aiken/string
 use aiken/time.{PosixTime}
 use aiken/transaction.{InlineDatum, Output, Transaction, ValidityRange}
@@ -23,8 +24,13 @@ pub fn must_be_signed_by(transaction: Transaction, vk: VerificationKeyHash) {
   has(transaction.extra_signatories, vk)
 }
 
-pub fn add_percentage(amount: Int, percentage: Int) -> Int {
-  amount * ( 100 + percentage ) / 100
+pub fn add_reward(amount: Int, reward: Rational) -> Int {
+  rational.floor(
+    rational.mul(
+      rational.from_int(amount),
+      rational.add(rational.from_int(1), reward),
+    ),
+  )
 }
 
 pub const day_millis = 86_400_000
@@ -32,15 +38,6 @@ pub const day_millis = 86_400_000
 //pub const day_millis = 3_600_000
 
 pub const hour_millis = 3_600_000
-
-pub const time_lock_hash =
-  #"550cc5a9682bcbbe5583f1006624000032b4d8f4ddd6f37623462ff9"
-
-pub const stake_pool_hash =
-  #"7a8a80f13e296da14c3c4e379e1c270ffabb2740a28e983acf75275f"
-
-pub const stake_proxy_hash =
-  #"dc404ed342f5bc8344c8e2d21da7a45b8e0f70b5364ee4fda57dae75"
 
 //Ensure that the time_lock output is set to expire after a set amount of days, with a certain buffer
 //to allow for a realistic transaction validity range
@@ -260,12 +257,14 @@ test must_have_same_datum_fail_when_different_datum_type() {
   !must_have_same_datum(time_lock_datum, stake_pool_datum)
 }
 
-test add_percentage_succeed_normal_case() {
-  add_percentage(1000, 1) == 1010
+test add_reward_succeed_normal_case() {
+  expect Some(r) = rational.new(1, 100)
+  add_reward(1000, r) == 1010
 }
 
-test add_percentage_succeed_floored_value() {
-  add_percentage(90, 1) == 90
+test add_reward_succeed_floored_value() {
+  expect Some(r) = rational.new(1, 100)
+  add_reward(90, r) == 90
 }
 
 test must_start_after_succeed_when_lower_bound_is_after() {
