@@ -19,19 +19,31 @@ use staking_contracts/datums.{
 use staking_contracts/utils.{
   add_percentage, day_millis, hour_millis, must_be_locked_until,
   must_be_signed_by, must_have_exactly_one_output, stake_pool_hash,
-  stake_proxy_hash, time_lock_hash,
+  stake_proxy_hash,
 }
 
-validator {
-  fn stake_proxy(datum: StakeProxyDatum, _redeemer: Void, ctx: ScriptContext) {
-    when ctx.purpose is {
-      //The proxy needs to be spend in a locking transaction or in a manual refund
-      Spend(my_output_reference) -> or {
-          must_be_signed_by(ctx.transaction, datum.owner)?,
-          is_proper_locking_tx(my_output_reference, datum, ctx)?,
-        }
-      _ -> False
-    }
+validator(time_lock_hash: ByteArray) {
+  fn stake_proxy(
+    datum: StakeProxyDatum,
+    _redeemer: Void,
+    ctx: ScriptContext,
+  ) -> Bool {
+    lock_transaction(datum, ctx, time_lock_hash)
+  }
+}
+
+fn lock_transaction(
+  datum: StakeProxyDatum,
+  ctx: ScriptContext,
+  time_lock_hash: ByteArray,
+) -> Bool {
+  when ctx.purpose is {
+    //The proxy needs to be spend in a locking transaction or in a manual refund
+    Spend(my_output_reference) -> or {
+        must_be_signed_by(ctx.transaction, datum.owner)?,
+        is_proper_locking_tx(my_output_reference, datum, ctx, time_lock_hash)?,
+      }
+    _ -> False
   }
 }
 
@@ -41,6 +53,7 @@ fn is_proper_locking_tx(
   my_output_reference: OutputReference,
   datum: StakeProxyDatum,
   ctx: ScriptContext,
+  time_lock_hash: ByteArray,
 ) {
   //Find the input this validator is attached to
   expect Some(self) =
@@ -111,6 +124,9 @@ fn is_proper_locking_tx(
 }
 
 test stake_proxy_lock_funds() {
+  let time_lock_hash =
+    #"550cc5a9682bcbbe5583f1006624000032b4d8f4ddd6f37623462ff9"
+
   let stake_pool_datum =
     StakePoolDatum {
       owner: #"00000000000000000000000000000000000000000000000000000000",
@@ -146,7 +162,6 @@ test stake_proxy_lock_funds() {
 
   let time_lock_data: Data = time_lock_datum
 
-  let redeemer = Void
   let stake_pool_output_reference =
     OutputReference { transaction_id: TransactionId(""), output_index: 0 }
 
@@ -259,5 +274,5 @@ test stake_proxy_lock_funds() {
              }
            },
     }
-  stake_proxy(stake_proxy_datum, redeemer, context)
+  lock_transaction(stake_proxy_datum, context, time_lock_hash)
 }

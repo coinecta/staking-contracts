@@ -17,4 +17,4 @@ jobs:
 
       - run: aiken fmt --check
       - run: aiken check
-      - run: aiken build
+      - run: ./build.sh
