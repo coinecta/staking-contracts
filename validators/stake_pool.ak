@@ -1,3 +1,4 @@
+use aiken/dict
 use aiken/interval.{Finite, Interval, IntervalBound}
 use aiken/list.{at}
 use aiken/transaction.{
@@ -7,12 +8,13 @@ use aiken/transaction.{
 use aiken/transaction/credential.{Address, ScriptCredential}
 use aiken/transaction/value.{add, from_lovelace}
 use staking_contracts/datums.{
-  RewardSetting, StakePoolDatum, StakePoolRedeemer, StakeProxyDatum,
+  LockDatum, RewardSetting, StakePoolDatum, StakePoolRedeemer, StakeProxyDatum,
   TimeLockDatum,
 }
 use staking_contracts/utils.{
   add_percentage, day_millis, hour_millis, must_be_locked_until,
-  must_be_signed_by, must_have_exactly_one_output,
+  must_be_signed_by, must_have_exactly_one_output, stake_pool_hash,
+  stake_proxy_hash, time_lock_hash,
 }
 
 validator {
@@ -53,7 +55,7 @@ fn is_proper_locking_tx(
   //The output needs to include a utxo with time lock validator
   let time_lock_outputs =
     ctx.transaction.outputs
-      |> transaction.find_script_outputs(datum.time_lock_hash)
+      |> transaction.find_script_outputs(time_lock_hash)
   expect Some(time_lock) = time_lock_outputs |> at(0)
 
   //We use the reward setting as indicated by the submitter of the transaction
@@ -121,7 +123,7 @@ test stake_pool_lock_funds() {
   let stake_pool_datum =
     StakePoolDatum {
       owner: #"00000000000000000000000000000000000000000000000000000000",
-      time_lock_hash: #"00000000000000000000000000000000000000000000000000000000",
+      decimals: 0,
       policy_id: #"00000000000000000000000000000000000000000000000000000000",
       asset_name: #"000000000000",
       reward_settings: [RewardSetting { days_locked: 1, percentage_reward: 1 }],
@@ -132,10 +134,10 @@ test stake_pool_lock_funds() {
       owner: #"00000000000000000000000000000000000000000000000000000000",
       days_locked: 1,
       reward_percentage: 1,
-      time_lock_hash: #"00000000000000000000000000000000000000000000000000000000",
       policy_id: #"00000000000000000000000000000000000000000000000000000000",
       asset_name: #"000000000000",
       key_policy_id: #"00000000000000000000000000000000000000000000000000000011",
+      key_img_url: "https://my-stake-key-img.com/img.png",
     }
 
   let current_time = 0
@@ -143,8 +145,12 @@ test stake_pool_lock_funds() {
 
   let time_lock_datum =
     TimeLockDatum {
-      lock_until: current_time + hour_millis + day_millis,
-      time_lock_key: #"00000000000000000000000000000000000000000000000000000011",
+      metadata: dict.new(),
+      version: 1,
+      extra: LockDatum {
+        lock_until: current_time + hour_millis + day_millis,
+        time_lock_key: #"00000000000000000000000000000000000000000000000000000011",
+      },
     }
   let time_lock_data: Data = time_lock_datum
 
@@ -155,9 +161,7 @@ test stake_pool_lock_funds() {
   let stake_pool_output =
     Output {
       address: Address {
-        payment_credential: ScriptCredential(
-          #"00000000000000000000000000000000000000000000000000000010",
-        ),
+        payment_credential: ScriptCredential(stake_pool_hash),
         stake_credential: None,
       },
       value: from_lovelace(2000000)
@@ -182,9 +186,7 @@ test stake_pool_lock_funds() {
   let stake_proxy_output =
     Output {
       address: Address {
-        payment_credential: ScriptCredential(
-          #"00000000000000000000000000000000000000000000000000000020",
-        ),
+        payment_credential: ScriptCredential(stake_proxy_hash),
         stake_credential: None,
       },
       value: from_lovelace(2000000)
@@ -219,9 +221,7 @@ test stake_pool_lock_funds() {
   let time_lock_output =
     Output {
       address: Address {
-        payment_credential: ScriptCredential(
-          #"00000000000000000000000000000000000000000000000000000000",
-        ),
+        payment_credential: ScriptCredential(time_lock_hash),
         stake_credential: None,
       },
       value: from_lovelace(2000000)
@@ -257,4 +257,3 @@ test stake_pool_lock_funds() {
     }
   stake_pool(stake_pool_datum, redeemer, context)
 }
-/// Owner's credentials

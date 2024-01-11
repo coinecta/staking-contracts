@@ -104,6 +104,17 @@
         }
       ]
     },
+    "aiken/dict/Dict$ByteArray_ByteArray": {
+      "title": "Dict",
+      "description": "An opaque `Dict`. The type is opaque because the module maintains some\n invariant, namely: there's only one occurrence of a given key in the dictionary.\n\n Note that the `key` parameter is a phantom-type, and only present as a\n means of documentation. Keys can be any type, yet will need to comparable\n to use functions like `insert`.\n\n See for example:\n\n ```aiken\n pub type Value =\n   Dict<PolicyId, Dict<AssetName, Int>>\n ```",
+      "dataType": "map",
+      "keys": {
+        "$ref": "#/definitions/ByteArray"
+      },
+      "values": {
+        "$ref": "#/definitions/ByteArray"
+      }
+    },
     "stake_key_mint/StakeKeyMintRedeemer": {
       "title": "StakeKeyMintRedeemer",
       "anyOf": [
@@ -115,6 +126,36 @@
             {
               "title": "stake_pool_index",
               "$ref": "#/definitions/Int"
+            },
+            {
+              "title": "time_lock_index",
+              "$ref": "#/definitions/Int"
+            },
+            {
+              "title": "stake_proxy_index",
+              "$ref": "#/definitions/Int"
+            }
+          ]
+        }
+      ]
+    },
+    "staking_contracts/datums/LockDatum": {
+      "title": "LockDatum",
+      "anyOf": [
+        {
+          "title": "LockDatum",
+          "dataType": "constructor",
+          "index": 0,
+          "fields": [
+            {
+              "title": "lock_until",
+              "description": "POSIX time in second, e.g. 1672843961000",
+              "$ref": "#/definitions/Int"
+            },
+            {
+              "title": "time_lock_key",
+              "description": "Owner's credentials",
+              "$ref": "#/definitions/ByteArray"
             }
           ]
         }
@@ -149,10 +190,6 @@
           "index": 0,
           "fields": [
             {
-              "title": "time_lock_hash",
-              "$ref": "#/definitions/ByteArray"
-            },
-            {
               "title": "reward_settings",
               "$ref": "#/definitions/List$staking_contracts~1datums~1RewardSetting"
             },
@@ -167,6 +204,10 @@
             {
               "title": "owner",
               "$ref": "#/definitions/ByteArray"
+            },
+            {
+              "title": "decimals",
+              "$ref": "#/definitions/Int"
             }
           ]
         }
@@ -209,10 +250,6 @@
               "$ref": "#/definitions/Int"
             },
             {
-              "title": "time_lock_hash",
-              "$ref": "#/definitions/ByteArray"
-            },
-            {
               "title": "policy_id",
               "$ref": "#/definitions/ByteArray"
             },
@@ -222,6 +259,10 @@
             },
             {
               "title": "key_policy_id",
+              "$ref": "#/definitions/ByteArray"
+            },
+            {
+              "title": "key_img_url",
               "$ref": "#/definitions/ByteArray"
             }
           ]
@@ -237,14 +278,16 @@
           "index": 0,
           "fields": [
             {
-              "title": "lock_until",
-              "description": "POSIX time in second, e.g. 1672843961000",
+              "title": "metadata",
+              "$ref": "#/definitions/aiken~1dict~1Dict$ByteArray_ByteArray"
+            },
+            {
+              "title": "version",
               "$ref": "#/definitions/Int"
             },
             {
-              "title": "time_lock_key",
-              "description": "Owner's credentials",
-              "$ref": "#/definitions/ByteArray"
+              "title": "extra",
+              "$ref": "#/definitions/staking_contracts~1datums~1LockDatum"
             }
           ]
         }

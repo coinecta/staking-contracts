@@ -1,4 +1,5 @@
 use aiken/bytearray
+use aiken/dict
 use aiken/interval.{Finite, Interval, IntervalBound}
 use aiken/list.{find}
 use aiken/transaction.{
@@ -12,12 +13,13 @@ use aiken/transaction/value.{
   add, from_lovelace, from_minted_value, quantity_of, to_minted_value, zero,
 }
 use staking_contracts/datums.{
-  RewardSetting, StakePoolDatum, StakeProxyDatum, TimeLockDatum,
+  LockDatum, RewardSetting, StakePoolDatum, StakeProxyDatum, TimeLockDatum,
   to_time_lock_datum,
 }
 use staking_contracts/utils.{
   add_percentage, day_millis, hour_millis, must_be_locked_until,
-  must_be_signed_by, must_have_exactly_one_output,
+  must_be_signed_by, must_have_exactly_one_output, stake_pool_hash,
+  stake_proxy_hash, time_lock_hash,
 }
 
 validator {
@@ -47,7 +49,7 @@ fn is_proper_locking_tx(
   //Find the output locking the staked tokens + reward and extract its datum
   let time_lock_outputs =
     ctx.transaction.outputs
-      |> transaction.find_script_outputs(datum.time_lock_hash)
+      |> transaction.find_script_outputs(time_lock_hash)
   expect Some(time_lock_output) = time_lock_outputs |> list.at(0)
   expect InlineDatum(time_lock_output_datum) = time_lock_output.datum
   let time_lock_datum = to_time_lock_datum(time_lock_output_datum)
@@ -65,9 +67,10 @@ fn is_proper_locking_tx(
   //Find minted stake key
   let minted = from_minted_value(ctx.transaction.mint)
 
-  let minted_policy_id = bytearray.take(time_lock_datum.time_lock_key, 28)
+  let minted_policy_id = bytearray.take(time_lock_datum.extra.time_lock_key, 28)
 
-  let minted_asset_name = bytearray.drop(time_lock_datum.time_lock_key, 28)
+  let minted_asset_name =
+    bytearray.drop(time_lock_datum.extra.time_lock_key, 28)
 
   //Make sure the minted key is using the expected policy_id
   let correct_stake_key_policy_id = minted_policy_id == datum.key_policy_id
@@ -111,7 +114,7 @@ test stake_proxy_lock_funds() {
   let stake_pool_datum =
     StakePoolDatum {
       owner: #"00000000000000000000000000000000000000000000000000000000",
-      time_lock_hash: #"00000000000000000000000000000000000000000000000000000000",
+      decimals: 0,
       policy_id: #"00000000000000000000000000000000000000000000000000000000",
       asset_name: #"000000000000",
       reward_settings: [RewardSetting { days_locked: 1, percentage_reward: 1 }],
@@ -122,10 +125,10 @@ test stake_proxy_lock_funds() {
       owner: #"00000000000000000000000000000000000000000000000000000000",
       days_locked: 1,
       reward_percentage: 1,
-      time_lock_hash: #"00000000000000000000000000000000000000000000000000000000",
       policy_id: #"00000000000000000000000000000000000000000000000000000000",
       asset_name: #"000000000000",
       key_policy_id: #"00000000000000000000000000000000000000000000000000000011",
+      key_img_url: "https://my-stake-key-img.com/img.png",
     }
 
   let current_time = 0
@@ -133,9 +136,14 @@ test stake_proxy_lock_funds() {
 
   let time_lock_datum =
     TimeLockDatum {
-      lock_until: current_time + hour_millis + day_millis,
-      time_lock_key: #"00000000000000000000000000000000000000000000000000000011",
+      metadata: dict.new(),
+      version: 1,
+      extra: LockDatum {
+        lock_until: current_time + hour_millis + day_millis,
+        time_lock_key: #"00000000000000000000000000000000000000000000000000000011",
+      },
     }
+
   let time_lock_data: Data = time_lock_datum
 
   let redeemer = Void
@@ -145,9 +153,7 @@ test stake_proxy_lock_funds() {
   let stake_pool_output =
     Output {
       address: Address {
-        payment_credential: ScriptCredential(
-          #"00000000000000000000000000000000000000000000000000000010",
-        ),
+        payment_credential: ScriptCredential(stake_pool_hash),
         stake_credential: None,
       },
       value: from_lovelace(2000000)
@@ -172,9 +178,7 @@ test stake_proxy_lock_funds() {
   let stake_proxy_output =
     Output {
       address: Address {
-        payment_credential: ScriptCredential(
-          #"00000000000000000000000000000000000000000000000000000020",
-        ),
+        payment_credential: ScriptCredential(stake_proxy_hash),
         stake_credential: None,
       },
       value: from_lovelace(2000000)
@@ -218,9 +222,7 @@ test stake_proxy_lock_funds() {
   let time_lock_output =
     Output {
       address: Address {
-        payment_credential: ScriptCredential(
-          #"00000000000000000000000000000000000000000000000000000000",
-        ),
+        payment_credential: ScriptCredential(time_lock_hash),
         stake_credential: None,
       },
       value: from_lovelace(2000000)
@@ -259,4 +261,3 @@ test stake_proxy_lock_funds() {
     }
   stake_proxy(stake_proxy_datum, redeemer, context)
 }
-/// Owner's credentials

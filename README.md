@@ -3,8 +3,8 @@
 The Coinecta staking contracts support the requirement of being able to allow
 users to lock tokens for certain time periods and get a percentage reward for
 it. Because these locking periods can potentially be long we bind the time lock
-to a unique NFT (the stake key) minted during the locking transaction. This
-allows the user to move to another wallet (for example due to loss of seed
+to a unique CIP-68 NFT (the stake key) minted during the locking transaction.
+This allows the user to move to another wallet (for example due to loss of seed
 phrase of the original wallet) or even sell the stake key to someone else on a
 secondary market such as jpg.store.
 
@@ -69,29 +69,19 @@ Main validations to be done in unstake transaction:
 ### stake_key_mint
 
 This minting policy checks which assets are locked and when they unlock. On top
-of that it ensures the asset name is unique.
+of that it ensures the asset name is unique and that a reference nft is minted
+into the timelock to support CIP 68
 
-The expected template for the stake key asset name is:
-
-```
-s{staked amount}{staked asset name}{unlock date}{time}{stake_pool output_index}{stake_pool tx_hash}
-```
-
-| Component               | length | description                                                                                                   |
-| ----------------------- | ------ | ------------------------------------------------------------------------------------------------------------- |
-| prefix s                | 1      |                                                                                                               |
-| staked amount           | 4      | Staked amount including reward, max 3 digits + letter (for example 345K)                                      |
-| staked asset name       | 6      | First 6 characters of the staked asset                                                                        |
-| unlock date             | 6      | Date on which stake is unlocked, format YYMMDD                                                                |
-| time                    | 4      | 8 most significant digits of upper validity of transaction, encoded as hex values (so 2 digits form one byte) |
-| stake_pool_output_index | 1      | Output index of the stake_pool that is part of the transactions' input                                        |
-| stake_pool tx_hash      | 10     | First characters of the hex representation of the tx_hash of the stake_pool input                             |
-| total                   | 32     |                                                                                                               |
+The on chain asset name will consist of the minting time joined with the
+transaction id of the stake pool input. Together this ensures uniqueness of the
+asset. Of course this does not give a humanly readable name, so we store CIP-68
+metadata in the time lock to allow for a good representation in wallets etc. The
+metadata is also checked to ensure it matches what is being locked.
 
 Main validations during a mint:
 
 - Asset name follows the expected template
-- Only 1 NFT is minted
+- Only 1 stake key and 1 corresponding reference NFT is minted
 
 ## Transactions
 
@@ -113,21 +103,21 @@ Main validations during a mint:
 
 ### Lock stake
 
-| inputs      | mints              | outputs                     |
-| ----------- | ------------------ | --------------------------- |
-| stake_pool  |                    | stake_pool                  |
-| stake_proxy |                    | time_lock                   |
-|             | stake_key_mint + 1 | user wallet                 |
-|             |                    | Off chain operator (change) |
+| inputs      | mints            | outputs                     |
+| ----------- | ---------------- | --------------------------- |
+| stake_pool  |                  | stake_pool                  |
+| stake_proxy | reference nft +1 | time_lock                   |
+|             | stake_key + 1    | user wallet                 |
+|             |                  | Off chain operator (change) |
 
 ![Lock stake](img/coinecta-staking-lock.png)
 
 ### Unstake
 
-| inputs      | mints              | outputs     |
-| ----------- | ------------------ | ----------- |
-| time_lock   |                    | user wallet |
-| user wallet | stake_key_mint - 1 |             |
+| inputs      | mints             | outputs     |
+| ----------- | ----------------- | ----------- |
+| time_lock   | reference nft - 1 | user wallet |
+| user wallet | stake_key - 1     |             |
 
 ![Unstake](img/coinecta-staking-unstake.png)
 

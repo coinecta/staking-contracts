@@ -9,8 +9,11 @@ validator {
     when ctx.purpose is {
       //This utxo can only be spend by its owner and after the unlock time has passed
       Spend(_) -> and {
-          key_is_burned(ctx.transaction.mint, datum.time_lock_key),
-          must_start_after(ctx.transaction.validity_range, datum.lock_until),
+          key_is_burned(ctx.transaction.mint, datum.extra.time_lock_key),
+          must_start_after(
+            ctx.transaction.validity_range,
+            datum.extra.lock_until,
+          ),
         }
       _ -> False
     }
