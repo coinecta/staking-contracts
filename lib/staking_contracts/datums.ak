@@ -2,7 +2,8 @@ use aiken/dict.{Dict}
 use aiken/hash.{Blake2b_224, Hash}
 use aiken/math/rational.{Rational}
 use aiken/time.{PosixTime}
-use aiken/transaction/credential.{Script, VerificationKey}
+use aiken/transaction.{Datum}
+use aiken/transaction/credential.{Address, Script, VerificationKey}
 use aiken/transaction/value.{AssetName, PolicyId}
 use sundae/multisig.{MultisigScript, Signature}
 
@@ -57,9 +58,15 @@ pub type StakePoolRedeemer {
   reward_index: Int,
 }
 
+pub type Destination {
+  address: Address,
+  datum: Datum,
+}
+
 pub type StakeProxyDatum {
   //Users' key which should receive the stake key and which is allowed to refund the stake request
-  owner: VerificationKeyHash,
+  owner: MultisigScript,
+  destination: Destination,
   //Amount of milliseconds the user wished to lock his tokens
   ms_locked: Int,
   //The reward percentage the user expects for locking his tokens

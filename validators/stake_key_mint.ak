@@ -7,18 +7,20 @@ use aiken/math
 use aiken/math/rational
 use aiken/string
 use aiken/transaction.{
-  InlineDatum, Input, Mint, Output, OutputReference, ScriptContext, Transaction,
-  TransactionId,
+  InlineDatum, Input, Mint, NoDatum, Output, OutputReference, ScriptContext,
+  Transaction, TransactionId,
 }
-use aiken/transaction/credential.{Address, ScriptCredential}
+use aiken/transaction/credential.{
+  Address, ScriptCredential, VerificationKeyCredential,
+}
 use aiken/transaction/value.{
   add, flatten, from_lovelace, from_minted_value, quantity_of, to_minted_value,
   zero,
 }
 use staking_contracts/datums.{
-  LockDatum, RewardSetting, StakePoolDatum, StakeProxyDatum, TimeLockDatum,
-  reference_prefix, stake_key_prefix, to_stake_pool_datum, to_stake_proxy_datum,
-  to_time_lock_datum,
+  Destination, LockDatum, RewardSetting, StakePoolDatum, StakeProxyDatum,
+  TimeLockDatum, reference_prefix, stake_key_prefix, to_stake_pool_datum,
+  to_stake_proxy_datum, to_time_lock_datum,
 }
 use staking_contracts/utils.{
   abbreviated_amount, hour_millis, must_start_after, time_to_date_string,
@@ -339,7 +341,18 @@ test lock_transaction_lock() {
   expect Some(reward) = rational.new(1, 100)
   let stake_proxy_datum =
     StakeProxyDatum {
-      owner: #"00000000000000000000000000000000000000000000000000000000",
+      owner: Signature(
+        #"00000000000000000000000000000000000000000000000000000000",
+      ),
+      destination: Destination {
+        address: Address {
+          payment_credential: VerificationKeyCredential(
+            #"00000000000000000000000000000000000000000000000000000000",
+          ),
+          stake_credential: None,
+        },
+        datum: NoDatum,
+      },
       ms_locked: 86_400_000,
       reward_multiplier: reward,
       policy_id: #"00000000000000000000000000000000000000000000000000000000",
