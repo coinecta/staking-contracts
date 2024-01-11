@@ -2,7 +2,7 @@ use aiken/bytearray.{concat, drop, from_string, take}
 use aiken/cbor.{serialise}
 use aiken/dict
 use aiken/interval.{Finite, Interval, IntervalBound}
-use aiken/list.{at, find, filter}
+use aiken/list.{at, filter, find}
 use aiken/math
 use aiken/math/rational
 use aiken/string
@@ -214,10 +214,7 @@ fn lock_transaction(
   }
 }
 
-fn unlock_transaction(
-  ctx: ScriptContext,
-  time_lock_hash: ByteArray,
-) -> Bool {
+fn unlock_transaction(ctx: ScriptContext, time_lock_hash: ByteArray) -> Bool {
   when ctx.purpose is {
     Mint(_policy_id) -> {
       //Retrieve all minted assets into an array
@@ -230,50 +227,65 @@ fn unlock_transaction(
       let stake_keys =
         burned |> filter(fn(mt) { take(mt.2nd, 4) == stake_key_prefix })
 
-      let reference_nft_key_count = list.length(reference_nfts) + list.length(stake_keys)
+      let reference_nft_key_count =
+        list.length(reference_nfts) + list.length(stake_keys)
       let correct_number_burned = burned_count == reference_nft_key_count
 
-      let correct_burns = list.all(reference_nfts, fn(reference_nft) {
-        //Asset name without CIP-68 prefix
-      let asset_name = drop(reference_nft.2nd, 4)
+      let correct_burns =
+        list.all(
+          reference_nfts,
+          fn(reference_nft) {
+            //Asset name without CIP-68 prefix
+            let asset_name = drop(reference_nft.2nd, 4)
 
-      expect Some(stake_key) = stake_keys |> find(fn(sk) {drop(sk.2nd, 4) == asset_name})
+            expect Some(stake_key) =
+              stake_keys |> find(fn(sk) { drop(sk.2nd, 4) == asset_name })
 
-      when reference_nft.3rd is {
-        //Burn scenario (unlock of locked tokens)
-        -1 -> {
-          //Full asset unit
-          let burned_unit = bytearray.concat(stake_key.1st, stake_key.2nd)
-          //The time lock input
-          expect Some(time_lock_input) =
-            ctx.transaction.inputs |> find(fn(i) {
-              i.output.address.payment_credential == ScriptCredential(time_lock_hash) && quantity_of(i.output.value, reference_nft.1st, reference_nft.2nd) == 1
-            })
+            when reference_nft.3rd is {
+              //Burn scenario (unlock of locked tokens)
+              -1 -> {
+                //Full asset unit
+                let burned_unit = bytearray.concat(stake_key.1st, stake_key.2nd)
+                //The time lock input
+                expect Some(time_lock_input) =
+                  ctx.transaction.inputs
+                    |> find(
+                         fn(i) {
+                           i.output.address.payment_credential == ScriptCredential(
+                             time_lock_hash,
+                           ) && quantity_of(
+                             i.output.value,
+                             reference_nft.1st,
+                             reference_nft.2nd,
+                           ) == 1
+                         },
+                       )
 
-          //The inline datum belonging to the time lock inptu cast to TimeLockDatum
-          expect InlineDatum(time_lock_input_datum) =
-            time_lock_input.output.datum
-          let time_lock_datum = to_time_lock_datum(time_lock_input_datum)
+                //The inline datum belonging to the time lock inptu cast to TimeLockDatum
+                expect InlineDatum(time_lock_input_datum) =
+                  time_lock_input.output.datum
+                let time_lock_datum = to_time_lock_datum(time_lock_input_datum)
 
-          //Ensure the tokens burned match the timelock key
-          let correct_token_burned =
-            time_lock_datum.extra.time_lock_key == burned_unit
+                //Ensure the tokens burned match the timelock key
+                let correct_token_burned =
+                  time_lock_datum.extra.time_lock_key == burned_unit
 
-          //Make sure both tokens are burned
-          let both_burned = stake_key.3rd == reference_nft.3rd
-          and {
-            must_start_after(
-              ctx.transaction.validity_range,
-              time_lock_datum.extra.lock_until,
-            )?,
-            correct_token_burned?,
-            both_burned?,
-          }
-        }
-        _ -> False
-      }
-      })
-      and{
+                //Make sure both tokens are burned
+                let both_burned = stake_key.3rd == reference_nft.3rd
+                and {
+                  must_start_after(
+                    ctx.transaction.validity_range,
+                    time_lock_datum.extra.lock_until,
+                  )?,
+                  correct_token_burned?,
+                  both_burned?,
+                }
+              }
+              _ -> False
+            }
+          },
+        )
+      and {
         correct_number_burned?,
         correct_burns?,
       }
@@ -540,7 +552,10 @@ test unlock_transaction_single_unlock() {
       version: 1,
       extra: LockDatum {
         lock_until: hour_millis + 86_400_000,
-        time_lock_key: concat(#"00000000000000000000000000000000000000000000000000000011",stake_key),
+        time_lock_key: concat(
+          #"00000000000000000000000000000000000000000000000000000011",
+          stake_key,
+        ),
       },
     }
 
@@ -600,7 +615,7 @@ test unlock_transaction_single_unlock() {
                    is_inclusive: True,
                  },
                  upper_bound: IntervalBound {
-                   bound_type: Finite(current_time+3_600_000),
+                   bound_type: Finite(current_time + 3_600_000),
                    is_inclusive: True,
                  },
                },
@@ -608,7 +623,7 @@ test unlock_transaction_single_unlock() {
            },
     }
 
-    !lock_transaction(
+  !lock_transaction(
     stake_key_mint_redeemer,
     context,
     stake_pool_hash,
@@ -670,7 +685,10 @@ test unlock_transaction_multi_unlock() {
       version: 1,
       extra: LockDatum {
         lock_until: hour_millis + 86_400_000,
-        time_lock_key: concat(#"00000000000000000000000000000000000000000000000000000011",stake_key_1),
+        time_lock_key: concat(
+          #"00000000000000000000000000000000000000000000000000000011",
+          stake_key_1,
+        ),
       },
     }
 
@@ -710,7 +728,10 @@ test unlock_transaction_multi_unlock() {
       version: 1,
       extra: LockDatum {
         lock_until: hour_millis + 86_400_000,
-        time_lock_key: concat(#"00000000000000000000000000000000000000000000000000000011",stake_key_2),
+        time_lock_key: concat(
+          #"00000000000000000000000000000000000000000000000000000011",
+          stake_key_2,
+        ),
       },
     }
 
@@ -750,7 +771,7 @@ test unlock_transaction_multi_unlock() {
         |> fn(transaction) {
              Transaction {
                ..transaction,
-               inputs: [time_lock_input_1,time_lock_input_2],
+               inputs: [time_lock_input_1, time_lock_input_2],
                outputs: [],
                mint: zero()
                  |> add(
@@ -780,7 +801,7 @@ test unlock_transaction_multi_unlock() {
                    is_inclusive: True,
                  },
                  upper_bound: IntervalBound {
-                   bound_type: Finite(current_time+3_600_000),
+                   bound_type: Finite(current_time + 3_600_000),
                    is_inclusive: True,
                  },
                },
@@ -788,7 +809,7 @@ test unlock_transaction_multi_unlock() {
            },
     }
 
-    !lock_transaction(
+  !lock_transaction(
     stake_key_mint_redeemer,
     context,
     stake_pool_hash,
