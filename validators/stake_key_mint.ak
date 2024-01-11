@@ -2,7 +2,7 @@ use aiken/bytearray.{concat, drop, from_string, take}
 use aiken/cbor.{serialise}
 use aiken/dict
 use aiken/interval.{Finite, Interval, IntervalBound}
-use aiken/list.{at, find}
+use aiken/list.{at, find, filter}
 use aiken/math
 use aiken/math/rational
 use aiken/string
@@ -51,7 +51,7 @@ validator(
         stake_proxy_hash,
         time_lock_hash,
       )?,
-      unlock_transaction(redeemer, ctx)?,
+      unlock_transaction(ctx, time_lock_hash)?,
     }
   }
 }
@@ -215,26 +215,29 @@ fn lock_transaction(
 }
 
 fn unlock_transaction(
-  redeemer: StakeKeyMintRedeemer,
   ctx: ScriptContext,
+  time_lock_hash: ByteArray,
 ) -> Bool {
   when ctx.purpose is {
     Mint(_policy_id) -> {
       //Retrieve all minted assets into an array
-      let minted = from_minted_value(ctx.transaction.mint) |> flatten()
-      //Look for the reference nft (CIP-68)
-      expect Some(reference_nft) =
-        minted |> find(fn(mt) { take(mt.2nd, 4) == reference_prefix })
-
+      let burned = from_minted_value(ctx.transaction.mint) |> flatten()
+      //Look for the reference nfts (CIP-68)
+      let reference_nfts =
+        burned |> filter(fn(mt) { take(mt.2nd, 4) == reference_prefix })
+      let burned_count = list.length(burned)
       //Look for the stake key (CIP-68)
-      expect Some(stake_key) =
-        minted |> find(fn(mt) { take(mt.2nd, 4) == stake_key_prefix })
+      let stake_keys =
+        burned |> filter(fn(mt) { take(mt.2nd, 4) == stake_key_prefix })
 
-      //Asset name without CIP-68 prefix
+      let reference_nft_key_count = list.length(reference_nfts) + list.length(stake_keys)
+      let correct_number_burned = burned_count == reference_nft_key_count
+
+      let correct_burns = list.all(reference_nfts, fn(reference_nft) {
+        //Asset name without CIP-68 prefix
       let asset_name = drop(reference_nft.2nd, 4)
 
-      //Ensure the stake key has the same asset name as the reference nft
-      let correct_stake_key_name = drop(stake_key.2nd, 4) == asset_name
+      expect Some(stake_key) = stake_keys |> find(fn(sk) {drop(sk.2nd, 4) == asset_name})
 
       when reference_nft.3rd is {
         //Burn scenario (unlock of locked tokens)
@@ -243,7 +246,9 @@ fn unlock_transaction(
           let burned_unit = bytearray.concat(stake_key.1st, stake_key.2nd)
           //The time lock input
           expect Some(time_lock_input) =
-            ctx.transaction.inputs |> at(redeemer.time_lock_index)
+            ctx.transaction.inputs |> find(fn(i) {
+              i.output.address.payment_credential == ScriptCredential(time_lock_hash) && quantity_of(i.output.value, reference_nft.1st, reference_nft.2nd) == 1
+            })
 
           //The inline datum belonging to the time lock inptu cast to TimeLockDatum
           expect InlineDatum(time_lock_input_datum) =
@@ -254,9 +259,6 @@ fn unlock_transaction(
           let correct_token_burned =
             time_lock_datum.extra.time_lock_key == burned_unit
 
-          //Make sure no extra tokens are burned
-          let no_extra_burn = list.length(minted) == 2
-
           //Make sure both tokens are burned
           let both_burned = stake_key.3rd == reference_nft.3rd
           and {
@@ -265,12 +267,15 @@ fn unlock_transaction(
               time_lock_datum.extra.lock_until,
             )?,
             correct_token_burned?,
-            no_extra_burn?,
             both_burned?,
-            correct_stake_key_name?,
           }
         }
         _ -> False
+      }
+      })
+      and{
+        correct_number_burned?,
+        correct_burns?,
       }
     }
     _ -> False
@@ -493,5 +498,301 @@ test lock_transaction_lock() {
     stake_pool_hash,
     stake_proxy_hash,
     time_lock_hash,
-  )
+  ) && !unlock_transaction(context, time_lock_hash)
+}
+
+test unlock_transaction_single_unlock() {
+  let current_time = 2 * 86_400_000
+
+  let time_lock_hash =
+    #"550cc5a9682bcbbe5583f1006624000032b4d8f4ddd6f37623462ff9"
+
+  let stake_pool_hash =
+    #"7a8a80f13e296da14c3c4e379e1c270ffabb2740a28e983acf75275f"
+
+  let stake_proxy_hash =
+    #"dc404ed342f5bc8344c8e2d21da7a45b8e0f70b5364ee4fda57dae75"
+
+  let stake_key_mint_redeemer =
+    StakeKeyMintRedeemer {
+      stake_pool_index: 0,
+      time_lock_index: 0,
+      stake_proxy_index: 1,
+    }
+
+  let asset_name =
+    list.foldl(
+      [
+        serialise(3_600_000),
+        from_string(@"0"),
+        #"00000000000000000000000000000000000000000000000000000000" |> take(17),
+      ],
+      "",
+      fn(el, sum) { bytearray.concat(sum, el) },
+    )
+
+  let stake_key = concat(stake_key_prefix, asset_name)
+  let reference_nft = concat(reference_prefix, asset_name)
+
+  let time_lock_datum =
+    TimeLockDatum {
+      metadata: dict.new(),
+      version: 1,
+      extra: LockDatum {
+        lock_until: hour_millis + 86_400_000,
+        time_lock_key: concat(#"00000000000000000000000000000000000000000000000000000011",stake_key),
+      },
+    }
+
+  let time_lock_data: Data = time_lock_datum
+  let time_lock_output =
+    Output {
+      address: Address {
+        payment_credential: ScriptCredential(time_lock_hash),
+        stake_credential: None,
+      },
+      value: from_lovelace(2000000)
+        |> add(
+             #"00000000000000000000000000000000000000000000000000000000",
+             #"000000000000",
+             1_010_000,
+           )
+        |> add(
+             #"00000000000000000000000000000000000000000000000000000011",
+             reference_nft,
+             1,
+           ),
+      datum: InlineDatum(time_lock_data),
+      reference_script: None,
+    }
+  let time_lock_output_reference =
+    OutputReference { transaction_id: TransactionId(""), output_index: 1 }
+
+  let time_lock_input =
+    Input {
+      output_reference: time_lock_output_reference,
+      output: time_lock_output,
+    }
+  let context =
+    ScriptContext {
+      purpose: Mint(#"00000000000000000000000000000000000000000000000000000011"),
+      transaction: transaction.placeholder()
+        |> fn(transaction) {
+             Transaction {
+               ..transaction,
+               inputs: [time_lock_input],
+               outputs: [],
+               mint: zero()
+                 |> add(
+                      #"00000000000000000000000000000000000000000000000000000011",
+                      stake_key,
+                      -1,
+                    )
+                 |> add(
+                      #"00000000000000000000000000000000000000000000000000000011",
+                      reference_nft,
+                      -1,
+                    )
+                 |> to_minted_value(),
+               validity_range: Interval {
+                 lower_bound: IntervalBound {
+                   bound_type: Finite(current_time),
+                   is_inclusive: True,
+                 },
+                 upper_bound: IntervalBound {
+                   bound_type: Finite(current_time+3_600_000),
+                   is_inclusive: True,
+                 },
+               },
+             }
+           },
+    }
+
+    !lock_transaction(
+    stake_key_mint_redeemer,
+    context,
+    stake_pool_hash,
+    stake_proxy_hash,
+    time_lock_hash,
+  ) && unlock_transaction(context, time_lock_hash)
+}
+
+test unlock_transaction_multi_unlock() {
+  let current_time = 2 * 86_400_000
+
+  let time_lock_hash =
+    #"550cc5a9682bcbbe5583f1006624000032b4d8f4ddd6f37623462ff9"
+
+  let stake_pool_hash =
+    #"7a8a80f13e296da14c3c4e379e1c270ffabb2740a28e983acf75275f"
+
+  let stake_proxy_hash =
+    #"dc404ed342f5bc8344c8e2d21da7a45b8e0f70b5364ee4fda57dae75"
+
+  let stake_key_mint_redeemer =
+    StakeKeyMintRedeemer {
+      stake_pool_index: 0,
+      time_lock_index: 0,
+      stake_proxy_index: 1,
+    }
+
+  let asset_name_1 =
+    list.foldl(
+      [
+        serialise(3_600_000),
+        from_string(@"0"),
+        #"00000000000000000000000000000000000000000000000000000000" |> take(17),
+      ],
+      "",
+      fn(el, sum) { bytearray.concat(sum, el) },
+    )
+
+  let stake_key_1 = concat(stake_key_prefix, asset_name_1)
+  let reference_nft_1 = concat(reference_prefix, asset_name_1)
+
+  let asset_name_2 =
+    list.foldl(
+      [
+        serialise(3_600_000),
+        from_string(@"0"),
+        #"11000000000000000000000000000000000000000000000000000000" |> take(17),
+      ],
+      "",
+      fn(el, sum) { bytearray.concat(sum, el) },
+    )
+
+  let stake_key_2 = concat(stake_key_prefix, asset_name_2)
+  let reference_nft_2 = concat(reference_prefix, asset_name_2)
+
+  let time_lock_datum_1 =
+    TimeLockDatum {
+      metadata: dict.new(),
+      version: 1,
+      extra: LockDatum {
+        lock_until: hour_millis + 86_400_000,
+        time_lock_key: concat(#"00000000000000000000000000000000000000000000000000000011",stake_key_1),
+      },
+    }
+
+  let time_lock_data_1: Data = time_lock_datum_1
+  let time_lock_output_1 =
+    Output {
+      address: Address {
+        payment_credential: ScriptCredential(time_lock_hash),
+        stake_credential: None,
+      },
+      value: from_lovelace(2000000)
+        |> add(
+             #"00000000000000000000000000000000000000000000000000000000",
+             #"000000000000",
+             1_010_000,
+           )
+        |> add(
+             #"00000000000000000000000000000000000000000000000000000011",
+             reference_nft_1,
+             1,
+           ),
+      datum: InlineDatum(time_lock_data_1),
+      reference_script: None,
+    }
+  let time_lock_output_reference_1 =
+    OutputReference { transaction_id: TransactionId(""), output_index: 1 }
+
+  let time_lock_input_1 =
+    Input {
+      output_reference: time_lock_output_reference_1,
+      output: time_lock_output_1,
+    }
+
+  let time_lock_datum_2 =
+    TimeLockDatum {
+      metadata: dict.new(),
+      version: 1,
+      extra: LockDatum {
+        lock_until: hour_millis + 86_400_000,
+        time_lock_key: concat(#"00000000000000000000000000000000000000000000000000000011",stake_key_2),
+      },
+    }
+
+  let time_lock_data_2: Data = time_lock_datum_2
+  let time_lock_output_2 =
+    Output {
+      address: Address {
+        payment_credential: ScriptCredential(time_lock_hash),
+        stake_credential: None,
+      },
+      value: from_lovelace(2000000)
+        |> add(
+             #"00000000000000000000000000000000000000000000000000000000",
+             #"000000000000",
+             1_010_000,
+           )
+        |> add(
+             #"00000000000000000000000000000000000000000000000000000011",
+             reference_nft_2,
+             1,
+           ),
+      datum: InlineDatum(time_lock_data_2),
+      reference_script: None,
+    }
+  let time_lock_output_reference_2 =
+    OutputReference { transaction_id: TransactionId(""), output_index: 2 }
+
+  let time_lock_input_2 =
+    Input {
+      output_reference: time_lock_output_reference_2,
+      output: time_lock_output_2,
+    }
+  let context =
+    ScriptContext {
+      purpose: Mint(#"00000000000000000000000000000000000000000000000000000011"),
+      transaction: transaction.placeholder()
+        |> fn(transaction) {
+             Transaction {
+               ..transaction,
+               inputs: [time_lock_input_1,time_lock_input_2],
+               outputs: [],
+               mint: zero()
+                 |> add(
+                      #"00000000000000000000000000000000000000000000000000000011",
+                      stake_key_1,
+                      -1,
+                    )
+                 |> add(
+                      #"00000000000000000000000000000000000000000000000000000011",
+                      reference_nft_1,
+                      -1,
+                    )
+                 |> add(
+                      #"00000000000000000000000000000000000000000000000000000011",
+                      stake_key_2,
+                      -1,
+                    )
+                 |> add(
+                      #"00000000000000000000000000000000000000000000000000000011",
+                      reference_nft_2,
+                      -1,
+                    )
+                 |> to_minted_value(),
+               validity_range: Interval {
+                 lower_bound: IntervalBound {
+                   bound_type: Finite(current_time),
+                   is_inclusive: True,
+                 },
+                 upper_bound: IntervalBound {
+                   bound_type: Finite(current_time+3_600_000),
+                   is_inclusive: True,
+                 },
+               },
+             }
+           },
+    }
+
+    !lock_transaction(
+    stake_key_mint_redeemer,
+    context,
+    stake_pool_hash,
+    stake_proxy_hash,
+    time_lock_hash,
+  ) && unlock_transaction(context, time_lock_hash)
 }
