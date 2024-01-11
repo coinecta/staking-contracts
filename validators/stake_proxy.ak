@@ -8,20 +8,19 @@ use aiken/transaction.{
   Transaction, TransactionId,
 }
 use aiken/transaction/credential.{
-  Address, ScriptCredential, VerificationKeyCredential, from_verification_key,
+  Address, ScriptCredential, VerificationKeyCredential,
 }
 use aiken/transaction/value.{
   add, from_lovelace, from_minted_value, quantity_of, to_minted_value, zero,
 }
 use staking_contracts/datums.{
-  LockDatum, RewardSetting, StakePoolDatum, StakeProxyDatum, TimeLockDatum,
-  to_time_lock_datum,
+  Destination, LockDatum, RewardSetting, StakePoolDatum, StakeProxyDatum,
+  TimeLockDatum, to_time_lock_datum,
 }
 use staking_contracts/utils.{
-  add_reward, hour_millis, must_be_locked_until, must_be_signed_by,
-  must_have_exactly_one_output,
+  add_reward, hour_millis, must_be_locked_until, must_have_exactly_one_output,
 }
-use sundae/multisig.{Signature}
+use sundae/multisig.{Signature, satisfied}
 
 validator(time_lock_hash: ByteArray) {
   fn stake_proxy(
@@ -29,7 +28,24 @@ validator(time_lock_hash: ByteArray) {
     _redeemer: Void,
     ctx: ScriptContext,
   ) -> Bool {
-    lock_transaction(datum, ctx, time_lock_hash)
+    or {
+      refund_transaction(datum, ctx)?,
+      lock_transaction(datum, ctx, time_lock_hash)?,
+    }
+  }
+}
+
+fn refund_transaction(datum: StakeProxyDatum, ctx: ScriptContext) -> Bool {
+  when ctx.purpose is {
+    //The proxy needs to be spent in a manual refund
+    Spend(_) ->
+      satisfied(
+        datum.owner,
+        ctx.transaction.extra_signatories,
+        ctx.transaction.validity_range,
+        ctx.transaction.withdrawals,
+      )?
+    _ -> False
   }
 }
 
@@ -39,11 +55,9 @@ fn lock_transaction(
   time_lock_hash: ByteArray,
 ) -> Bool {
   when ctx.purpose is {
-    //The proxy needs to be spend in a locking transaction or in a manual refund
-    Spend(my_output_reference) -> or {
-        must_be_signed_by(ctx.transaction, datum.owner)?,
-        is_proper_locking_tx(my_output_reference, datum, ctx, time_lock_hash)?,
-      }
+    //The proxy needs to be spend in a locking transaction
+    Spend(my_output_reference) ->
+      is_proper_locking_tx(my_output_reference, datum, ctx, time_lock_hash)?
     _ -> False
   }
 }
@@ -98,9 +112,7 @@ fn is_proper_locking_tx(
     ctx.transaction.outputs
       |> find(
            fn(o) {
-             quantity_of(o.value, minted_policy_id, minted_asset_name) == 1 && o.address.payment_credential == VerificationKeyCredential(
-               datum.owner,
-             )
+             quantity_of(o.value, minted_policy_id, minted_asset_name) == 1 && o.address == datum.destination.address && o.datum == datum.destination.datum
            },
          )
 
@@ -150,7 +162,18 @@ test stake_proxy_lock_funds() {
 
   let stake_proxy_datum =
     StakeProxyDatum {
-      owner: #"00000000000000000000000000000000000000000000000000000000",
+      owner: Signature(
+        #"00000000000000000000000000000000000000000000000000000000",
+      ),
+      destination: Destination {
+        address: Address {
+          payment_credential: VerificationKeyCredential(
+            #"00000000000000000000000000000000000000000000000000000000",
+          ),
+          stake_credential: None,
+        },
+        datum: NoDatum,
+      },
       ms_locked: 86_400_000,
       reward_multiplier: reward,
       policy_id: #"00000000000000000000000000000000000000000000000000000000",
@@ -237,11 +260,11 @@ test stake_proxy_lock_funds() {
 
   let user_output =
     Output {
-      address: from_verification_key(stake_proxy_datum.owner),
+      address: stake_proxy_datum.destination.address,
       value: from_lovelace(100000)
         |> add(stake_proxy_datum.key_policy_id, #"", 1),
       reference_script: None,
-      datum: NoDatum,
+      datum: stake_proxy_datum.destination.datum,
     }
 
   //datum: stake_pool_datum,

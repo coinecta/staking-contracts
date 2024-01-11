@@ -3,14 +3,16 @@ use aiken/interval.{Finite, Interval, IntervalBound}
 use aiken/list.{at}
 use aiken/math/rational
 use aiken/transaction.{
-  InlineDatum, Input, Output, OutputReference, ScriptContext, Spend, Transaction,
-  TransactionId,
+  InlineDatum, Input, NoDatum, Output, OutputReference, ScriptContext, Spend,
+  Transaction, TransactionId,
 }
-use aiken/transaction/credential.{Address, ScriptCredential}
+use aiken/transaction/credential.{
+  Address, ScriptCredential, VerificationKeyCredential,
+}
 use aiken/transaction/value.{add, from_lovelace}
 use staking_contracts/datums.{
-  LockDatum, RewardSetting, StakePoolDatum, StakePoolRedeemer, StakeProxyDatum,
-  TimeLockDatum,
+  Destination, LockDatum, RewardSetting, StakePoolDatum, StakePoolRedeemer,
+  StakeProxyDatum, TimeLockDatum,
 }
 use staking_contracts/utils.{
   add_reward, hour_millis, must_be_locked_until, must_have_exactly_one_output,
@@ -172,7 +174,18 @@ test stake_pool_lock_funds() {
 
   let stake_proxy_datum =
     StakeProxyDatum {
-      owner: #"00000000000000000000000000000000000000000000000000000000",
+      owner: Signature(
+        #"00000000000000000000000000000000000000000000000000000000",
+      ),
+      destination: Destination {
+        address: Address {
+          payment_credential: VerificationKeyCredential(
+            #"00000000000000000000000000000000000000000000000000000000",
+          ),
+          stake_credential: None,
+        },
+        datum: NoDatum,
+      },
       ms_locked: 86_400_000,
       reward_multiplier: reward,
       policy_id: #"00000000000000000000000000000000000000000000000000000000",
