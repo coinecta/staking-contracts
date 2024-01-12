@@ -72,11 +72,10 @@ This minting policy checks which assets are locked and when they unlock. On top
 of that it ensures the asset name is unique and that a reference nft is minted
 into the timelock to support CIP 68
 
-The on chain asset name will consist of the minting time joined with the
-transaction id of the stake pool input. Together this ensures uniqueness of the
-asset. Of course this does not give a humanly readable name, so we store CIP-68
-metadata in the time lock to allow for a good representation in wallets etc. The
-metadata is also checked to ensure it matches what is being locked.
+The on chain asset name will be the first 28 bytes of a blake2b_256 hash of the
+output reference of the stake pool input. We store CIP-68 metadata in the time
+lock to allow for a good representation in wallets etc. The metadata is also
+checked to ensure it matches what is being locked.
 
 Main validations during a mint:
 
@@ -114,6 +113,9 @@ Main validations during a mint:
 
 ### Unstake
 
+1 time lock input is shown here, but a user can unstake multiple time locks in 1
+transaction assuming they all are passed their unlock time.
+
 | inputs      | mints             | outputs     |
 | ----------- | ----------------- | ----------- |
 | time_lock   | reference nft - 1 | user wallet |
@@ -124,7 +126,7 @@ Main validations during a mint:
 ## Building
 
 ```sh
-aiken build
+./build.sh
 ```
 
 ## Testing
