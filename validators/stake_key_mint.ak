@@ -1,6 +1,7 @@
 use aiken/bytearray.{concat, drop, from_string, take}
 use aiken/cbor.{serialise}
 use aiken/dict
+use aiken/hash.{blake2b_256}
 use aiken/interval.{Finite, Interval, IntervalBound}
 use aiken/list.{at, filter, find}
 use aiken/math
@@ -114,21 +115,6 @@ fn lock_transaction(
           expect InlineDatum(time_lock_output_datum) = time_lock_output.datum
           let time_lock_datum = to_time_lock_datum(time_lock_output_datum)
 
-          //Fetch latest valid time for this transaction
-          expect Finite(tx_latest_time) =
-            ctx.transaction.validity_range.upper_bound.bound_type
-
-          //We use the serialised time as part of the unique asset name
-          let time_bytes = serialise(tx_latest_time)
-
-          //The second part of the unique asset name is the output reference index+transaction id of the stake pool input
-          let output_ref_index_bytes =
-            bytearray.from_string(
-              string.from_int(stake_pool_input.output_reference.output_index),
-            )
-          let TransactionId(stake_pool_input_transaction_id) =
-            stake_pool_input.output_reference.transaction_id
-
           //The amount of tokens to be locked (no decimals taken into account)
           let raw_amount =
             time_lock_output.value
@@ -142,15 +128,8 @@ fn lock_transaction(
 
           //Construct the proper asset name using the unique components
           let proper_asset_name =
-            list.foldl(
-              [
-                time_bytes,
-                output_ref_index_bytes,
-                stake_pool_input_transaction_id |> take(17),
-              ],
-              "",
-              fn(el, sum) { bytearray.concat(sum, el) },
-            )
+            blake2b_256(serialise(stake_pool_input.output_reference))
+              |> take(28)
 
           //Construct the proper metadata nft name
           let proper_meta_name =
@@ -306,16 +285,51 @@ test lock_transaction_lock() {
   let stake_proxy_hash =
     #"dc404ed342f5bc8344c8e2d21da7a45b8e0f70b5364ee4fda57dae75"
 
-  let asset_name =
-    list.foldl(
-      [
-        serialise(3_600_000),
-        from_string(@"0"),
-        #"00000000000000000000000000000000000000000000000000000000" |> take(17),
+  expect Some(reward) = rational.new(1, 100)
+
+  let stake_pool_datum =
+    StakePoolDatum {
+      owner: Signature(
+        #"00000000000000000000000000000000000000000000000000000000",
+      ),
+      decimals: 0,
+      policy_id: #"00000000000000000000000000000000000000000000000000000000",
+      asset_name: #"000000000000",
+      reward_settings: [
+        RewardSetting { ms_locked: 86_400_000, reward_multiplier: reward },
       ],
-      "",
-      fn(el, sum) { bytearray.concat(sum, el) },
-    )
+    }
+  let stake_pool_output_reference =
+    OutputReference {
+      transaction_id: TransactionId(
+        #"00000000000000000000000000000000000000000000000000000000",
+      ),
+      output_index: 0,
+    }
+  let stake_pool_output =
+    Output {
+      address: Address {
+        payment_credential: ScriptCredential(stake_pool_hash),
+        stake_credential: None,
+      },
+      value: from_lovelace(2000000)
+        |> add(
+             #"00000000000000000000000000000000000000000000000000000000",
+             #"000000000000",
+             1_000_000_000,
+           ),
+      datum: InlineDatum(stake_pool_datum),
+      reference_script: None,
+    }
+
+  let stake_pool_input =
+    Input {
+      output_reference: stake_pool_output_reference,
+      output: stake_pool_output,
+    }
+
+  let asset_name =
+    blake2b_256(serialise(stake_pool_output_reference)) |> take(28)
 
   let stake_key = concat(stake_key_prefix, asset_name)
   let reference_nft = concat(reference_prefix, asset_name)
@@ -355,7 +369,6 @@ test lock_transaction_lock() {
       },
     }
 
-  expect Some(reward) = rational.new(1, 100)
   let stake_proxy_datum =
     StakeProxyDatum {
       owner: Signature(
@@ -422,46 +435,6 @@ test lock_transaction_lock() {
            ),
       datum: InlineDatum(time_lock_data),
       reference_script: None,
-    }
-  let stake_pool_datum =
-    StakePoolDatum {
-      owner: Signature(
-        #"00000000000000000000000000000000000000000000000000000000",
-      ),
-      decimals: 0,
-      policy_id: #"00000000000000000000000000000000000000000000000000000000",
-      asset_name: #"000000000000",
-      reward_settings: [
-        RewardSetting { ms_locked: 86_400_000, reward_multiplier: reward },
-      ],
-    }
-  let stake_pool_output_reference =
-    OutputReference {
-      transaction_id: TransactionId(
-        #"00000000000000000000000000000000000000000000000000000000",
-      ),
-      output_index: 0,
-    }
-  let stake_pool_output =
-    Output {
-      address: Address {
-        payment_credential: ScriptCredential(stake_pool_hash),
-        stake_credential: None,
-      },
-      value: from_lovelace(2000000)
-        |> add(
-             #"00000000000000000000000000000000000000000000000000000000",
-             #"000000000000",
-             1_000_000_000,
-           ),
-      datum: InlineDatum(stake_pool_datum),
-      reference_script: None,
-    }
-
-  let stake_pool_input =
-    Input {
-      output_reference: stake_pool_output_reference,
-      output: stake_pool_output,
     }
 
   let stake_key_mint_redeemer =
