@@ -19,5 +19,3 @@ aiken blueprint apply -v stake_nft_mint.stake_nft_mint $TIME_LOCK_HASH > tmp
 mv tmp plutus.json
 aiken blueprint apply -v stake_nft_mint.stake_nft_mint $STAKE_POOL_HASH > tmp
 mv tmp plutus.json
-aiken blueprint apply -v stake_nft_mint.stake_nft_mint $STAKE_PROXY_HASH > tmp
-mv tmp plutus.json

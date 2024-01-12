@@ -8,20 +8,17 @@ use aiken/math
 use aiken/math/rational
 use aiken/string
 use aiken/transaction.{
-  InlineDatum, Input, Mint, NoDatum, Output, OutputReference, ScriptContext,
-  Transaction, TransactionId,
+  InlineDatum, Input, Mint, Output, OutputReference, ScriptContext, Transaction,
+  TransactionId,
 }
-use aiken/transaction/credential.{
-  Address, ScriptCredential, VerificationKeyCredential,
-}
+use aiken/transaction/credential.{Address, ScriptCredential}
 use aiken/transaction/value.{
   add, flatten, from_lovelace, from_minted_value, quantity_of, to_minted_value,
   zero,
 }
 use staking_contracts/datums.{
-  Destination, LockDatum, RewardSetting, StakePoolDatum, StakeProxyDatum,
-  TimeLockDatum, reference_prefix, stake_nft_prefix, to_stake_pool_datum,
-  to_stake_proxy_datum, to_time_lock_datum,
+  LockDatum, RewardSetting, StakePoolDatum, TimeLockDatum, reference_prefix,
+  stake_nft_prefix, to_stake_pool_datum, to_time_lock_datum,
 }
 use staking_contracts/utils.{
   abbreviated_amount, hour_millis, must_start_after, time_to_date_string,
@@ -31,27 +28,16 @@ use sundae/multisig.{Signature}
 type StakeNFTMintRedeemer {
   stake_pool_index: Int,
   time_lock_index: Int,
-  stake_proxy_index: Int,
 }
 
-validator(
-  time_lock_hash: ByteArray,
-  stake_pool_hash: ByteArray,
-  stake_proxy_hash: ByteArray,
-) {
+validator(time_lock_hash: ByteArray, stake_pool_hash: ByteArray) {
   fn stake_nft_mint(
     _datum: Void,
     redeemer: StakeNFTMintRedeemer,
     ctx: ScriptContext,
   ) {
     or {
-      lock_transaction(
-        redeemer,
-        ctx,
-        stake_pool_hash,
-        stake_proxy_hash,
-        time_lock_hash,
-      )?,
+      lock_transaction(redeemer, ctx, stake_pool_hash, time_lock_hash)?,
       unlock_transaction(ctx, time_lock_hash)?,
     }
   }
@@ -61,7 +47,6 @@ fn lock_transaction(
   redeemer: StakeNFTMintRedeemer,
   ctx: ScriptContext,
   stake_pool_hash: ByteArray,
-  stake_proxy_hash: ByteArray,
   time_lock_hash: ByteArray,
 ) -> Bool {
   when ctx.purpose is {
@@ -90,11 +75,6 @@ fn lock_transaction(
             ctx.transaction.inputs |> at(redeemer.stake_pool_index)
           expect ScriptCredential(stake_pool_cred) =
             stake_pool_input.output.address.payment_credential
-          //The stake proxy input
-          expect Some(stake_proxy_input) =
-            ctx.transaction.inputs |> at(redeemer.stake_proxy_index)
-          expect ScriptCredential(stake_proxy_cred) =
-            stake_proxy_input.output.address.payment_credential
           //The time lock output
           expect Some(time_lock_output) =
             ctx.transaction.outputs |> at(redeemer.time_lock_index)
@@ -104,11 +84,6 @@ fn lock_transaction(
           expect InlineDatum(stake_pool_input_datum) =
             stake_pool_input.output.datum
           let stake_pool_datum = to_stake_pool_datum(stake_pool_input_datum)
-
-          //Fetch inlinedatum from stakeproxy input and cast to StakeProxyDatum
-          expect InlineDatum(stake_proxy_input_datum) =
-            stake_proxy_input.output.datum
-          let stake_proxy_datum = to_stake_proxy_datum(stake_proxy_input_datum)
 
           //Fetch inlinedatum from timelock output and cast to TimeLockDatum
           expect InlineDatum(time_lock_output_datum) = time_lock_output.datum
@@ -156,12 +131,6 @@ fn lock_transaction(
           let correct_meta_name =
             dict.get(time_lock_datum.metadata, "name") == Some(proper_meta_name)
 
-          //Ensure the token image is as requested by the user
-          let correct_image =
-            dict.get(time_lock_datum.metadata, "image") == Some(
-              stake_proxy_datum.nft_img_url,
-            )
-
           //Make sure an extra field is present in the metadata showing the tokens locked by the nft
           let correct_meta_amount =
             dict.get(time_lock_datum.metadata, "locked_amount") == Some(
@@ -170,7 +139,6 @@ fn lock_transaction(
 
           //Verify script hashes
           let correct_stake_pool = stake_pool_hash == stake_pool_cred
-          let correct_stake_proxy = stake_proxy_hash == stake_proxy_cred
           let correct_time_lock = time_lock_hash == time_lock_cred
 
           and {
@@ -178,10 +146,8 @@ fn lock_transaction(
             correct_reference_name?,
             no_extra_mint?,
             correct_meta_name?,
-            correct_image?,
             correct_meta_amount?,
             correct_stake_pool?,
-            correct_stake_proxy?,
             correct_time_lock?,
           }
         }
@@ -282,9 +248,6 @@ test lock_transaction_lock() {
   let stake_pool_hash =
     #"7a8a80f13e296da14c3c4e379e1c270ffabb2740a28e983acf75275f"
 
-  let stake_proxy_hash =
-    #"dc404ed342f5bc8344c8e2d21da7a45b8e0f70b5364ee4fda57dae75"
-
   expect Some(reward) = rational.new(1, 100)
 
   let stake_pool_datum =
@@ -368,52 +331,6 @@ test lock_transaction_lock() {
       },
     }
 
-  let stake_proxy_datum =
-    StakeProxyDatum {
-      owner: Signature(
-        #"00000000000000000000000000000000000000000000000000000000",
-      ),
-      destination: Destination {
-        address: Address {
-          payment_credential: VerificationKeyCredential(
-            #"00000000000000000000000000000000000000000000000000000000",
-          ),
-          stake_credential: None,
-        },
-        datum: NoDatum,
-      },
-      ms_locked: 86_400_000,
-      reward_multiplier: reward,
-      policy_id: #"00000000000000000000000000000000000000000000000000000000",
-      asset_name: #"000000000000",
-      nft_policy_id: #"00000000000000000000000000000000000000000000000000000011",
-      nft_img_url: "https://my-stake-nft-img.com/img.png",
-    }
-
-  let stake_proxy_output_reference =
-    OutputReference { transaction_id: TransactionId(""), output_index: 1 }
-
-  let stake_proxy_output =
-    Output {
-      address: Address {
-        payment_credential: ScriptCredential(stake_proxy_hash),
-        stake_credential: None,
-      },
-      value: from_lovelace(2000000)
-        |> add(
-             #"00000000000000000000000000000000000000000000000000000000",
-             #"000000000000",
-             1_000_000,
-           ),
-      datum: InlineDatum(stake_proxy_datum),
-      reference_script: None,
-    }
-  let stake_proxy_input =
-    Input {
-      output_reference: stake_proxy_output_reference,
-      output: stake_proxy_output,
-    }
-
   let time_lock_data: Data = time_lock_datum
   let time_lock_output =
     Output {
@@ -437,11 +354,7 @@ test lock_transaction_lock() {
     }
 
   let stake_nft_mint_redeemer =
-    StakeNFTMintRedeemer {
-      stake_pool_index: 0,
-      time_lock_index: 0,
-      stake_proxy_index: 1,
-    }
+    StakeNFTMintRedeemer { stake_pool_index: 0, time_lock_index: 0 }
   let context =
     ScriptContext {
       purpose: Mint(#"00000000000000000000000000000000000000000000000000000011"),
@@ -449,7 +362,7 @@ test lock_transaction_lock() {
         |> fn(transaction) {
              Transaction {
                ..transaction,
-               inputs: [stake_pool_input, stake_proxy_input],
+               inputs: [stake_pool_input],
                outputs: [time_lock_output],
                mint: zero()
                  |> add(
@@ -480,7 +393,6 @@ test lock_transaction_lock() {
     stake_nft_mint_redeemer,
     context,
     stake_pool_hash,
-    stake_proxy_hash,
     time_lock_hash,
   ) && !unlock_transaction(context, time_lock_hash)
 }
@@ -494,15 +406,8 @@ test unlock_transaction_single_unlock() {
   let stake_pool_hash =
     #"7a8a80f13e296da14c3c4e379e1c270ffabb2740a28e983acf75275f"
 
-  let stake_proxy_hash =
-    #"dc404ed342f5bc8344c8e2d21da7a45b8e0f70b5364ee4fda57dae75"
-
   let stake_nft_mint_redeemer =
-    StakeNFTMintRedeemer {
-      stake_pool_index: 0,
-      time_lock_index: 0,
-      stake_proxy_index: 1,
-    }
+    StakeNFTMintRedeemer { stake_pool_index: 0, time_lock_index: 0 }
 
   let asset_name =
     list.foldl(
@@ -599,7 +504,6 @@ test unlock_transaction_single_unlock() {
     stake_nft_mint_redeemer,
     context,
     stake_pool_hash,
-    stake_proxy_hash,
     time_lock_hash,
   ) && unlock_transaction(context, time_lock_hash)
 }
@@ -613,15 +517,8 @@ test unlock_transaction_multi_unlock() {
   let stake_pool_hash =
     #"7a8a80f13e296da14c3c4e379e1c270ffabb2740a28e983acf75275f"
 
-  let stake_proxy_hash =
-    #"dc404ed342f5bc8344c8e2d21da7a45b8e0f70b5364ee4fda57dae75"
-
   let stake_nft_mint_redeemer =
-    StakeNFTMintRedeemer {
-      stake_pool_index: 0,
-      time_lock_index: 0,
-      stake_proxy_index: 1,
-    }
+    StakeNFTMintRedeemer { stake_pool_index: 0, time_lock_index: 0 }
 
   let asset_name_1 =
     list.foldl(
@@ -785,7 +682,6 @@ test unlock_transaction_multi_unlock() {
     stake_nft_mint_redeemer,
     context,
     stake_pool_hash,
-    stake_proxy_hash,
     time_lock_hash,
   ) && unlock_transaction(context, time_lock_hash)
 }

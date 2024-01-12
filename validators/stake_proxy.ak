@@ -186,7 +186,6 @@ test stake_proxy_lock_funds() {
       policy_id: #"00000000000000000000000000000000000000000000000000000000",
       asset_name: #"000000000000",
       nft_policy_id: #"00000000000000000000000000000000000000000000000000000011",
-      nft_img_url: "https://my-stake-nft-img.com/img.png",
     }
 
   let current_time = 0
