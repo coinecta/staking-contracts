@@ -20,7 +20,7 @@ use aiken/transaction/value.{
 }
 use staking_contracts/datums.{
   Destination, LockDatum, RewardSetting, StakePoolDatum, StakeProxyDatum,
-  TimeLockDatum, reference_prefix, stake_key_prefix, to_stake_pool_datum,
+  TimeLockDatum, reference_prefix, stake_nft_prefix, to_stake_pool_datum,
   to_stake_proxy_datum, to_time_lock_datum,
 }
 use staking_contracts/utils.{
@@ -28,7 +28,7 @@ use staking_contracts/utils.{
 }
 use sundae/multisig.{Signature}
 
-type StakeKeyMintRedeemer {
+type StakeNFTMintRedeemer {
   stake_pool_index: Int,
   time_lock_index: Int,
   stake_proxy_index: Int,
@@ -39,9 +39,9 @@ validator(
   stake_pool_hash: ByteArray,
   stake_proxy_hash: ByteArray,
 ) {
-  fn stake_key_mint(
+  fn stake_nft_mint(
     _datum: Void,
-    redeemer: StakeKeyMintRedeemer,
+    redeemer: StakeNFTMintRedeemer,
     ctx: ScriptContext,
   ) {
     or {
@@ -58,7 +58,7 @@ validator(
 }
 
 fn lock_transaction(
-  redeemer: StakeKeyMintRedeemer,
+  redeemer: StakeNFTMintRedeemer,
   ctx: ScriptContext,
   stake_pool_hash: ByteArray,
   stake_proxy_hash: ByteArray,
@@ -72,15 +72,15 @@ fn lock_transaction(
       expect Some(reference_nft) =
         minted |> find(fn(mt) { take(mt.2nd, 4) == reference_prefix })
 
-      //Look for the stake key (CIP-68)
-      expect Some(stake_key) =
-        minted |> find(fn(mt) { take(mt.2nd, 4) == stake_key_prefix })
+      //Look for the stake nft (CIP-68)
+      expect Some(stake_nft) =
+        minted |> find(fn(mt) { take(mt.2nd, 4) == stake_nft_prefix })
 
       //Asset name without CIP-68 prefix
       let asset_name = drop(reference_nft.2nd, 4)
 
-      //Ensure the stake key has the same asset name as the reference nft
-      let correct_stake_key_name = drop(stake_key.2nd, 4) == asset_name
+      //Ensure the stake nft has the same asset name as the reference nft
+      let correct_stake_nft_name = drop(stake_nft.2nd, 4) == asset_name
 
       when reference_nft.3rd is {
         //Mint scenario (tokens are to be locked)
@@ -122,7 +122,7 @@ fn lock_transaction(
                    stake_pool_datum.asset_name,
                  )
 
-          //Amount with decimals, this is only to be used in metadata for the stake key
+          //Amount with decimals, this is only to be used in metadata for the stake nft
           let amount = raw_amount / math.pow(10, stake_pool_datum.decimals)
 
           //Construct the proper asset name using the unique components
@@ -134,7 +134,7 @@ fn lock_transaction(
           let proper_meta_name =
             list.foldl(
               [
-                "Stake Key ",
+                "Stake NFT ",
                 abbreviated_amount(amount, 0),
                 " ",
                 stake_pool_datum.asset_name,
@@ -149,7 +149,7 @@ fn lock_transaction(
           //Make sure the asset name is as expected
           let correct_reference_name = asset_name == proper_asset_name
 
-          //Only allow mint of 2 assets (reference and stake key)
+          //Only allow mint of 2 assets (reference and stake nft)
           let no_extra_mint = list.length(minted) == 2
 
           //Ensure the metadata token name is as expected
@@ -159,10 +159,10 @@ fn lock_transaction(
           //Ensure the token image is as requested by the user
           let correct_image =
             dict.get(time_lock_datum.metadata, "image") == Some(
-              stake_proxy_datum.key_img_url,
+              stake_proxy_datum.nft_img_url,
             )
 
-          //Make sure an extra field is present in the metadata showing the tokens locked by the key
+          //Make sure an extra field is present in the metadata showing the tokens locked by the nft
           let correct_meta_amount =
             dict.get(time_lock_datum.metadata, "locked_amount") == Some(
               bytearray.from_string(string.from_int(amount)),
@@ -174,7 +174,7 @@ fn lock_transaction(
           let correct_time_lock = time_lock_hash == time_lock_cred
 
           and {
-            correct_stake_key_name?,
+            correct_stake_nft_name?,
             correct_reference_name?,
             no_extra_mint?,
             correct_meta_name?,
@@ -201,13 +201,13 @@ fn unlock_transaction(ctx: ScriptContext, time_lock_hash: ByteArray) -> Bool {
       let reference_nfts =
         burned |> filter(fn(mt) { take(mt.2nd, 4) == reference_prefix })
       let burned_count = list.length(burned)
-      //Look for the stake key (CIP-68)
-      let stake_keys =
-        burned |> filter(fn(mt) { take(mt.2nd, 4) == stake_key_prefix })
+      //Look for the stake nft (CIP-68)
+      let stake_nfts =
+        burned |> filter(fn(mt) { take(mt.2nd, 4) == stake_nft_prefix })
 
-      let reference_nft_key_count =
-        list.length(reference_nfts) + list.length(stake_keys)
-      let correct_number_burned = burned_count == reference_nft_key_count
+      let nft_count =
+        list.length(reference_nfts) + list.length(stake_nfts)
+      let correct_number_burned = burned_count == nft_count
 
       let correct_burns =
         list.all(
@@ -216,14 +216,14 @@ fn unlock_transaction(ctx: ScriptContext, time_lock_hash: ByteArray) -> Bool {
             //Asset name without CIP-68 prefix
             let asset_name = drop(reference_nft.2nd, 4)
 
-            expect Some(stake_key) =
-              stake_keys |> find(fn(sk) { drop(sk.2nd, 4) == asset_name })
+            expect Some(stake_nft) =
+              stake_nfts |> find(fn(sk) { drop(sk.2nd, 4) == asset_name })
 
             when reference_nft.3rd is {
               //Burn scenario (unlock of locked tokens)
               -1 -> {
                 //Full asset unit
-                let burned_unit = bytearray.concat(stake_key.1st, stake_key.2nd)
+                let burned_unit = bytearray.concat(stake_nft.1st, stake_nft.2nd)
                 //The time lock input
                 expect Some(time_lock_input) =
                   ctx.transaction.inputs
@@ -244,12 +244,12 @@ fn unlock_transaction(ctx: ScriptContext, time_lock_hash: ByteArray) -> Bool {
                   time_lock_input.output.datum
                 let time_lock_datum = to_time_lock_datum(time_lock_input_datum)
 
-                //Ensure the tokens burned match the timelock key
+                //Ensure the tokens burned match the timelock nft
                 let correct_token_burned =
-                  time_lock_datum.extra.time_lock_key == burned_unit
+                  time_lock_datum.extra.time_lock_nft == burned_unit
 
                 //Make sure both tokens are burned
-                let both_burned = stake_key.3rd == reference_nft.3rd
+                let both_burned = stake_nft.3rd == reference_nft.3rd
                 and {
                   must_start_after(
                     ctx.transaction.validity_range,
@@ -329,13 +329,13 @@ test lock_transaction_lock() {
 
   let asset_name =
     blake2b_256(serialise(stake_pool_output_reference)) |> take(28)
-  let stake_key = concat(stake_key_prefix, asset_name)
+  let stake_nft = concat(stake_nft_prefix, asset_name)
   let reference_nft = concat(reference_prefix, asset_name)
 
   let meta_name =
     list.foldl(
       [
-        "Stake Key ",
+        "Stake NFT ",
         abbreviated_amount(1_010_000, 0),
         " ",
         #"000000000000",
@@ -352,7 +352,7 @@ test lock_transaction_lock() {
         |> dict.insert("name", meta_name, bytearray.compare)
         |> dict.insert(
              "image",
-             "https://my-stake-key-img.com/img.png",
+             "https://my-stake-nft-img.com/img.png",
              bytearray.compare,
            )
         |> dict.insert(
@@ -363,7 +363,7 @@ test lock_transaction_lock() {
       version: 1,
       extra: LockDatum {
         lock_until: current_time + hour_millis + 86_400_000,
-        time_lock_key: #"00000000000000000000000000000000000000000000000000000011",
+        time_lock_nft: #"00000000000000000000000000000000000000000000000000000011",
       },
     }
 
@@ -385,8 +385,8 @@ test lock_transaction_lock() {
       reward_multiplier: reward,
       policy_id: #"00000000000000000000000000000000000000000000000000000000",
       asset_name: #"000000000000",
-      key_policy_id: #"00000000000000000000000000000000000000000000000000000011",
-      key_img_url: "https://my-stake-key-img.com/img.png",
+      nft_policy_id: #"00000000000000000000000000000000000000000000000000000011",
+      nft_img_url: "https://my-stake-nft-img.com/img.png",
     }
 
   let stake_proxy_output_reference =
@@ -435,8 +435,8 @@ test lock_transaction_lock() {
       reference_script: None,
     }
 
-  let stake_key_mint_redeemer =
-    StakeKeyMintRedeemer {
+  let stake_nft_mint_redeemer =
+    StakeNFTMintRedeemer {
       stake_pool_index: 0,
       time_lock_index: 0,
       stake_proxy_index: 1,
@@ -453,7 +453,7 @@ test lock_transaction_lock() {
                mint: zero()
                  |> add(
                       #"00000000000000000000000000000000000000000000000000000011",
-                      stake_key,
+                      stake_nft,
                       1,
                     )
                  |> add(
@@ -476,7 +476,7 @@ test lock_transaction_lock() {
            },
     }
   lock_transaction(
-    stake_key_mint_redeemer,
+    stake_nft_mint_redeemer,
     context,
     stake_pool_hash,
     stake_proxy_hash,
@@ -496,8 +496,8 @@ test unlock_transaction_single_unlock() {
   let stake_proxy_hash =
     #"dc404ed342f5bc8344c8e2d21da7a45b8e0f70b5364ee4fda57dae75"
 
-  let stake_key_mint_redeemer =
-    StakeKeyMintRedeemer {
+  let stake_nft_mint_redeemer =
+    StakeNFTMintRedeemer {
       stake_pool_index: 0,
       time_lock_index: 0,
       stake_proxy_index: 1,
@@ -514,7 +514,7 @@ test unlock_transaction_single_unlock() {
       fn(el, sum) { bytearray.concat(sum, el) },
     )
 
-  let stake_key = concat(stake_key_prefix, asset_name)
+  let stake_nft = concat(stake_nft_prefix, asset_name)
   let reference_nft = concat(reference_prefix, asset_name)
 
   let time_lock_datum =
@@ -523,9 +523,9 @@ test unlock_transaction_single_unlock() {
       version: 1,
       extra: LockDatum {
         lock_until: hour_millis + 86_400_000,
-        time_lock_key: concat(
+        time_lock_nft: concat(
           #"00000000000000000000000000000000000000000000000000000011",
-          stake_key,
+          stake_nft,
         ),
       },
     }
@@ -571,7 +571,7 @@ test unlock_transaction_single_unlock() {
                mint: zero()
                  |> add(
                       #"00000000000000000000000000000000000000000000000000000011",
-                      stake_key,
+                      stake_nft,
                       -1,
                     )
                  |> add(
@@ -595,7 +595,7 @@ test unlock_transaction_single_unlock() {
     }
 
   !lock_transaction(
-    stake_key_mint_redeemer,
+    stake_nft_mint_redeemer,
     context,
     stake_pool_hash,
     stake_proxy_hash,
@@ -615,8 +615,8 @@ test unlock_transaction_multi_unlock() {
   let stake_proxy_hash =
     #"dc404ed342f5bc8344c8e2d21da7a45b8e0f70b5364ee4fda57dae75"
 
-  let stake_key_mint_redeemer =
-    StakeKeyMintRedeemer {
+  let stake_nft_mint_redeemer =
+    StakeNFTMintRedeemer {
       stake_pool_index: 0,
       time_lock_index: 0,
       stake_proxy_index: 1,
@@ -633,7 +633,7 @@ test unlock_transaction_multi_unlock() {
       fn(el, sum) { bytearray.concat(sum, el) },
     )
 
-  let stake_key_1 = concat(stake_key_prefix, asset_name_1)
+  let stake_nft_1 = concat(stake_nft_prefix, asset_name_1)
   let reference_nft_1 = concat(reference_prefix, asset_name_1)
 
   let asset_name_2 =
@@ -647,7 +647,7 @@ test unlock_transaction_multi_unlock() {
       fn(el, sum) { bytearray.concat(sum, el) },
     )
 
-  let stake_key_2 = concat(stake_key_prefix, asset_name_2)
+  let stake_nft_2 = concat(stake_nft_prefix, asset_name_2)
   let reference_nft_2 = concat(reference_prefix, asset_name_2)
 
   let time_lock_datum_1 =
@@ -656,9 +656,9 @@ test unlock_transaction_multi_unlock() {
       version: 1,
       extra: LockDatum {
         lock_until: hour_millis + 86_400_000,
-        time_lock_key: concat(
+        time_lock_nft: concat(
           #"00000000000000000000000000000000000000000000000000000011",
-          stake_key_1,
+          stake_nft_1,
         ),
       },
     }
@@ -699,9 +699,9 @@ test unlock_transaction_multi_unlock() {
       version: 1,
       extra: LockDatum {
         lock_until: hour_millis + 86_400_000,
-        time_lock_key: concat(
+        time_lock_nft: concat(
           #"00000000000000000000000000000000000000000000000000000011",
-          stake_key_2,
+          stake_nft_2,
         ),
       },
     }
@@ -747,7 +747,7 @@ test unlock_transaction_multi_unlock() {
                mint: zero()
                  |> add(
                       #"00000000000000000000000000000000000000000000000000000011",
-                      stake_key_1,
+                      stake_nft_1,
                       -1,
                     )
                  |> add(
@@ -757,7 +757,7 @@ test unlock_transaction_multi_unlock() {
                     )
                  |> add(
                       #"00000000000000000000000000000000000000000000000000000011",
-                      stake_key_2,
+                      stake_nft_2,
                       -1,
                     )
                  |> add(
@@ -781,7 +781,7 @@ test unlock_transaction_multi_unlock() {
     }
 
   !lock_transaction(
-    stake_key_mint_redeemer,
+    stake_nft_mint_redeemer,
     context,
     stake_pool_hash,
     stake_proxy_hash,

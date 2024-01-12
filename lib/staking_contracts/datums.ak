@@ -9,17 +9,17 @@ use sundae/multisig.{MultisigScript, Signature}
 
 pub const reference_prefix = #"000643b0"
 
-pub const stake_key_prefix = #"000de140"
+pub const stake_nft_prefix = #"000de140"
 
 pub type LockDatum {
   /// POSIX time in second, e.g. 1672843961000
   lock_until: PosixTime,
   /// Owner's credentials
-  time_lock_key: ByteArray,
+  time_lock_nft: ByteArray,
 }
 
 pub type TimeLockDatum {
-  //Metadata fields holding name, img etc for the stake key following CIP-25
+  //Metadata fields holding name, img etc for the stake nft following CIP-25
   metadata: Dict<ByteArray, ByteArray>,
   //Following on chain metadata standard in CIP-68
   version: Int,
@@ -47,9 +47,9 @@ pub type StakePoolDatum {
   policy_id: PolicyId,
   //Asset name of the asset in the stake pool
   asset_name: AssetName,
-  //Owner key that is allowed to change settings on the pool or remove unused assets
+  //Owner nft that is allowed to change settings on the pool or remove unused assets
   owner: MultisigScript,
-  //Decimals for the asset in the stake pool (used for showing staked amount in stake key)
+  //Decimals for the asset in the stake pool (used for showing staked amount in stake nft)
   decimals: Int,
 }
 
@@ -64,8 +64,9 @@ pub type Destination {
 }
 
 pub type StakeProxyDatum {
-  //Users' key which should receive the stake key and which is allowed to refund the stake request
+  //Users' script defining who can initiate a refund.
   owner: MultisigScript,
+  //Destination which should receive the stake nft
   destination: Destination,
   //Amount of milliseconds the user wished to lock his tokens
   ms_locked: Int,
@@ -75,10 +76,10 @@ pub type StakeProxyDatum {
   policy_id: PolicyId,
   //Asset name of the asset the user wants to stake
   asset_name: AssetName,
-  //Policy id the user expects the stake key to be minted with
-  key_policy_id: PolicyId,
-  //Url to img the user wants to use as their stake key nft
-  key_img_url: ByteArray,
+  //Policy id the user expects the stake nft to be minted with
+  nft_policy_id: PolicyId,
+  //Url to img the user wants to use as their stake nft
+  nft_img_url: ByteArray,
 }
 
 pub fn to_stake_pool_datum(data: Data) -> StakePoolDatum {
@@ -114,7 +115,7 @@ test must_cast_to_time_lock_datum() {
     TimeLockDatum {
       metadata: dict.new(),
       version: 1,
-      extra: LockDatum { lock_until: 0, time_lock_key: #"" },
+      extra: LockDatum { lock_until: 0, time_lock_nft: #"" },
     }
   let time_lock_data: Data = time_lock_datum
   time_lock_datum == to_time_lock_datum(time_lock_data)

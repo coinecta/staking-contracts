@@ -15,9 +15,9 @@ aiken blueprint apply -v stake_proxy.stake_proxy $BATCHER_CERTIFICATE > tmp
 mv tmp plutus.json
 
 STAKE_PROXY_HASH="581c$(aiken blueprint hash -v stake_proxy.stake_proxy)"
-aiken blueprint apply -v stake_key_mint.stake_key_mint $TIME_LOCK_HASH > tmp
+aiken blueprint apply -v stake_nft_mint.stake_nft_mint $TIME_LOCK_HASH > tmp
 mv tmp plutus.json
-aiken blueprint apply -v stake_key_mint.stake_key_mint $STAKE_POOL_HASH > tmp
+aiken blueprint apply -v stake_nft_mint.stake_nft_mint $STAKE_POOL_HASH > tmp
 mv tmp plutus.json
-aiken blueprint apply -v stake_key_mint.stake_key_mint $STAKE_PROXY_HASH > tmp
+aiken blueprint apply -v stake_nft_mint.stake_nft_mint $STAKE_PROXY_HASH > tmp
 mv tmp plutus.json
