@@ -1,4 +1,4 @@
-use aiken/bytearray
+use aiken/bytearray.{drop, take}
 use aiken/dict
 use aiken/interval.{Finite, Interval, IntervalBound}
 use aiken/list.{find}
@@ -18,11 +18,12 @@ use staking_contracts/datums.{
   TimeLockDatum, to_time_lock_datum,
 }
 use staking_contracts/utils.{
-  add_reward, hour_millis, must_be_locked_until, must_have_exactly_one_output,
+  add_reward, hour_millis, must_be_locked_until, must_contain_asset,
+  must_have_exactly_one_output,
 }
 use sundae/multisig.{Signature, satisfied}
 
-validator(time_lock_hash: ByteArray) {
+validator(time_lock_hash: ByteArray, batcher_certificate) {
   fn stake_proxy(
     datum: StakeProxyDatum,
     _redeemer: Void,
@@ -30,7 +31,7 @@ validator(time_lock_hash: ByteArray) {
   ) -> Bool {
     or {
       refund_transaction(datum, ctx)?,
-      lock_transaction(datum, ctx, time_lock_hash)?,
+      lock_transaction(datum, ctx, time_lock_hash, batcher_certificate)?,
     }
   }
 }
@@ -53,11 +54,14 @@ fn lock_transaction(
   datum: StakeProxyDatum,
   ctx: ScriptContext,
   time_lock_hash: ByteArray,
+  batcher_certificate: ByteArray,
 ) -> Bool {
   when ctx.purpose is {
     //The proxy needs to be spend in a locking transaction
-    Spend(my_output_reference) ->
-      is_proper_locking_tx(my_output_reference, datum, ctx, time_lock_hash)?
+    Spend(my_output_reference) -> and {
+        is_proper_locking_tx(my_output_reference, datum, ctx, time_lock_hash)?,
+        must_contain_asset(ctx.transaction.outputs, batcher_certificate)?,
+      }
     _ -> False
   }
 }
@@ -146,6 +150,9 @@ test stake_proxy_lock_funds() {
   let stake_proxy_hash =
     #"dc404ed342f5bc8344c8e2d21da7a45b8e0f70b5364ee4fda57dae75"
 
+  let batcher_certificate =
+    #"00000000000000000000000000000000000000000000000000000011000643b06921e91f6af4b4eef9d1a9b55ed75c4e09243b3c67edd1f013230d75"
+
   expect Some(reward) = rational.new(1, 100)
   let stake_pool_datum =
     StakePoolDatum {
@@ -213,6 +220,18 @@ test stake_proxy_lock_funds() {
              1_000_000_000,
            ),
       datum: InlineDatum(stake_pool_datum),
+      reference_script: None,
+    }
+
+  let batcher_output =
+    Output {
+      address: Address {
+        payment_credential: VerificationKeyCredential(#""),
+        stake_credential: None,
+      },
+      value: from_lovelace(2000000)
+        |> add(batcher_certificate |> take(28), batcher_certificate |> drop(28), 1),
+      datum: NoDatum,
       reference_script: None,
     }
 
@@ -292,7 +311,12 @@ test stake_proxy_lock_funds() {
              Transaction {
                ..transaction,
                inputs: [stake_pool_input, stake_proxy_input],
-               outputs: [new_stake_pool_output, time_lock_output, user_output],
+               outputs: [
+                 new_stake_pool_output,
+                 time_lock_output,
+                 user_output,
+                 batcher_output,
+               ],
                mint: zero()
                  |> add(stake_proxy_datum.key_policy_id, #"", 1)
                  |> to_minted_value(),
@@ -309,5 +333,10 @@ test stake_proxy_lock_funds() {
              }
            },
     }
-  lock_transaction(stake_proxy_datum, context, time_lock_hash)
+  lock_transaction(
+    stake_proxy_datum,
+    context,
+    time_lock_hash,
+    batcher_certificate,
+  )
 }

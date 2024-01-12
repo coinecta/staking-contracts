@@ -1,12 +1,14 @@
-use aiken/bytearray
+use aiken/bytearray.{drop, take}
 use aiken/dict
 use aiken/interval.{Finite}
-use aiken/list.{has, length}
+use aiken/list.{find, has, length}
 use aiken/math
 use aiken/math/rational.{Rational}
+use aiken/option.{is_some}
 use aiken/string
 use aiken/time.{PosixTime}
 use aiken/transaction.{InlineDatum, Output, Transaction, ValidityRange}
+use aiken/transaction/value.{quantity_of}
 use staking_contracts/datums.{
   LockDatum, StakePoolDatum, TimeLockDatum, VerificationKeyHash,
   to_time_lock_datum,
@@ -31,6 +33,14 @@ pub fn add_reward(amount: Int, reward: Rational) -> Int {
       rational.from_int(amount),
       rational.add(rational.from_int(1), reward),
     ),
+  )
+}
+
+pub fn must_contain_asset(outputs: List<Output>, unit: ByteArray) -> Bool {
+  let policy_id = unit |> take(28)
+  let asset_id = unit |> drop(28)
+  is_some(
+    outputs |> find(fn(o) { quantity_of(o.value, policy_id, asset_id) > 0 }),
   )
 }
 
