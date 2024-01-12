@@ -205,8 +205,7 @@ fn unlock_transaction(ctx: ScriptContext, time_lock_hash: ByteArray) -> Bool {
       let stake_nfts =
         burned |> filter(fn(mt) { take(mt.2nd, 4) == stake_nft_prefix })
 
-      let nft_count =
-        list.length(reference_nfts) + list.length(stake_nfts)
+      let nft_count = list.length(reference_nfts) + list.length(stake_nfts)
       let correct_number_burned = burned_count == nft_count
 
       let correct_burns =
