@@ -34,7 +34,7 @@ validator(time_lock_hash: ByteArray) {
 
 fn update_transaction(datum: StakePoolDatum, ctx: ScriptContext) -> Bool {
   when ctx.purpose is {
-    //Ensure the utxo is spent by either the owner or a valid locking tx
+    //Ensure the utxo is spent by the owner
     Spend(_) ->
       satisfied(
         datum.owner,
@@ -53,7 +53,7 @@ fn lock_transaction(
   time_lock_hash: ByteArray,
 ) -> Bool {
   when ctx.purpose is {
-    //Ensure the utxo is spent by either the owner or a valid locking tx
+    //Ensure the utxo is spent in a valid locking tx
     Spend(my_output_reference) ->
       is_proper_locking_tx(
         my_output_reference,

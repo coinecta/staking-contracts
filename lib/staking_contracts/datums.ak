@@ -7,8 +7,10 @@ use aiken/transaction/credential.{Address, Script, VerificationKey}
 use aiken/transaction/value.{AssetName, PolicyId}
 use sundae/multisig.{MultisigScript, Signature}
 
+//Prefix of the reference nft asset id according to CIP-68
 pub const reference_prefix = #"000643b0"
 
+//Prefix of the nft asset id according to CIP-68
 pub const stake_nft_prefix = #"000de140"
 
 pub type LockDatum {
@@ -47,7 +49,7 @@ pub type StakePoolDatum {
   policy_id: PolicyId,
   //Asset name of the asset in the stake pool
   asset_name: AssetName,
-  //Owner nft that is allowed to change settings on the pool or remove unused assets
+  //Owner script that is allowed to change settings on the pool or remove unused assets
   owner: MultisigScript,
   //Decimals for the asset in the stake pool (used for showing staked amount in stake nft)
   decimals: Int,
@@ -59,7 +61,9 @@ pub type StakePoolRedeemer {
 }
 
 pub type Destination {
+  //Address of the destination
   address: Address,
+  //Datum of the destination
   datum: Datum,
 }
 

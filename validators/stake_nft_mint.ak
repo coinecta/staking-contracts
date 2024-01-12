@@ -206,6 +206,8 @@ fn unlock_transaction(ctx: ScriptContext, time_lock_hash: ByteArray) -> Bool {
         burned |> filter(fn(mt) { take(mt.2nd, 4) == stake_nft_prefix })
 
       let nft_count = list.length(reference_nfts) + list.length(stake_nfts)
+
+      //Ensure that only CIP-68 nft's are burned
       let correct_number_burned = burned_count == nft_count
 
       let correct_burns =
@@ -223,7 +225,7 @@ fn unlock_transaction(ctx: ScriptContext, time_lock_hash: ByteArray) -> Bool {
               -1 -> {
                 //Full asset unit
                 let burned_unit = bytearray.concat(stake_nft.1st, stake_nft.2nd)
-                //The time lock input
+                //The time lock input that contains the reference nft
                 expect Some(time_lock_input) =
                   ctx.transaction.inputs
                     |> find(

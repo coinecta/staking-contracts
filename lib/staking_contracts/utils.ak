@@ -36,6 +36,7 @@ pub fn add_reward(amount: Int, reward: Rational) -> Int {
   )
 }
 
+//Returns true if the list of outputs contains at least 1 of the provided unit
 pub fn must_contain_asset(outputs: List<Output>, unit: ByteArray) -> Bool {
   let policy_id = unit |> take(28)
   let asset_id = unit |> drop(28)
@@ -80,6 +81,7 @@ pub fn must_start_after(range: ValidityRange, lock_expiration_time: PosixTime) {
   }?
 }
 
+//Abbreviates an amount to make it more readable to the user
 pub fn abbreviated_amount(amount: Int, decimals: Int) -> ByteArray {
   let amount_dec = amount / math.pow(10, decimals)
   let quadrillions = amount_dec / 1_000_000_000_000
@@ -109,6 +111,7 @@ pub fn abbreviated_amount(amount: Int, decimals: Int) -> ByteArray {
   }
 }
 
+//Produces a date string in the format YYYYMMDD
 //Taken from https://stackoverflow.com/questions/7136385/calculate-day-number-from-an-unix-timestamp-in-a-math-way
 pub fn time_to_date_string(time: PosixTime) -> ByteArray {
   let s = time / 1000

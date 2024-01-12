@@ -57,7 +57,7 @@ fn lock_transaction(
   batcher_certificate: ByteArray,
 ) -> Bool {
   when ctx.purpose is {
-    //The proxy needs to be spend in a locking transaction
+    //The proxy needs to be spend in a locking transaction by a certified batcher
     Spend(my_output_reference) -> and {
         is_proper_locking_tx(my_output_reference, datum, ctx, time_lock_hash)?,
         must_contain_asset(ctx.transaction.outputs, batcher_certificate)?,
