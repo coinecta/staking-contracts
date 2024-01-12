@@ -100,7 +100,6 @@ fn lock_transaction(
             ctx.transaction.outputs |> at(redeemer.time_lock_index)
           expect ScriptCredential(time_lock_cred) =
             time_lock_output.address.payment_credential
-
           //Fetch inlinedatum from stakepool input and cast to StakePoolDatum
           expect InlineDatum(stake_pool_input_datum) =
             stake_pool_input.output.datum
@@ -330,7 +329,6 @@ test lock_transaction_lock() {
 
   let asset_name =
     blake2b_256(serialise(stake_pool_output_reference)) |> take(28)
-
   let stake_key = concat(stake_key_prefix, asset_name)
   let reference_nft = concat(reference_prefix, asset_name)
 

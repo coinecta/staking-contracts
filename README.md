@@ -125,6 +125,9 @@ transaction assuming they all are passed their unlock time.
 
 ## Building
 
+Update the build.sh script with the CBOR serialised policy id + asset id of the
+batcher certificate.
+
 ```sh
 ./build.sh
 ```
