@@ -96,23 +96,23 @@ fn is_proper_locking_tx(
     time_lock_output.value
       |> quantity_of(datum.policy_id, datum.asset_name)
 
-  //Find minted stake key
+  //Find minted stake nft
   let minted = from_minted_value(ctx.transaction.mint)
 
-  let minted_policy_id = bytearray.take(time_lock_datum.extra.time_lock_key, 28)
+  let minted_policy_id = bytearray.take(time_lock_datum.extra.time_lock_nft, 28)
 
   let minted_asset_name =
-    bytearray.drop(time_lock_datum.extra.time_lock_key, 28)
+    bytearray.drop(time_lock_datum.extra.time_lock_nft, 28)
 
-  //Make sure the minted key is using the expected policy_id
-  let correct_stake_key_policy_id = minted_policy_id == datum.key_policy_id
+  //Make sure the minted nft is using the expected policy_id
+  let correct_stake_nft_policy_id = minted_policy_id == datum.nft_policy_id
 
   //Make sure only 1 is minted
-  let correct_key_minted =
+  let correct_nft_minted =
     quantity_of(minted, minted_policy_id, minted_asset_name) == 1
 
-  //Make sure the key is minted into the users' wallet
-  expect Some(_key_minted_to_user) =
+  //Make sure the nft is minted into the users' wallet
+  expect Some(_nft_minted_to_user) =
     ctx.transaction.outputs
       |> find(
            fn(o) {
@@ -127,7 +127,7 @@ fn is_proper_locking_tx(
   and {
     //Ensure only one time lock output to avoid unexpected results
     must_have_exactly_one_output(time_lock_outputs)?,
-    correct_stake_key_policy_id?,
+    correct_stake_nft_policy_id?,
     //Make sure the time lock does not lock the assets too long
     must_be_locked_until(
       ctx.transaction.validity_range,
@@ -136,7 +136,7 @@ fn is_proper_locking_tx(
       hour_millis,
     )?,
     correct_locked_tokens?,
-    correct_key_minted?,
+    correct_nft_minted?,
   }
 }
 
@@ -185,8 +185,8 @@ test stake_proxy_lock_funds() {
       reward_multiplier: reward,
       policy_id: #"00000000000000000000000000000000000000000000000000000000",
       asset_name: #"000000000000",
-      key_policy_id: #"00000000000000000000000000000000000000000000000000000011",
-      key_img_url: "https://my-stake-key-img.com/img.png",
+      nft_policy_id: #"00000000000000000000000000000000000000000000000000000011",
+      nft_img_url: "https://my-stake-nft-img.com/img.png",
     }
 
   let current_time = 0
@@ -198,7 +198,7 @@ test stake_proxy_lock_funds() {
       version: 1,
       extra: LockDatum {
         lock_until: current_time + hour_millis + 86_400_000,
-        time_lock_key: #"00000000000000000000000000000000000000000000000000000011",
+        time_lock_nft: #"00000000000000000000000000000000000000000000000000000011",
       },
     }
 
@@ -281,7 +281,7 @@ test stake_proxy_lock_funds() {
     Output {
       address: stake_proxy_datum.destination.address,
       value: from_lovelace(100000)
-        |> add(stake_proxy_datum.key_policy_id, #"", 1),
+        |> add(stake_proxy_datum.nft_policy_id, #"", 1),
       reference_script: None,
       datum: stake_proxy_datum.destination.datum,
     }
@@ -318,7 +318,7 @@ test stake_proxy_lock_funds() {
                  batcher_output,
                ],
                mint: zero()
-                 |> add(stake_proxy_datum.key_policy_id, #"", 1)
+                 |> add(stake_proxy_datum.nft_policy_id, #"", 1)
                  |> to_minted_value(),
                validity_range: Interval {
                  lower_bound: IntervalBound {

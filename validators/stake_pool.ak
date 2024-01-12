@@ -190,8 +190,8 @@ test stake_pool_lock_funds() {
       reward_multiplier: reward,
       policy_id: #"00000000000000000000000000000000000000000000000000000000",
       asset_name: #"000000000000",
-      key_policy_id: #"00000000000000000000000000000000000000000000000000000011",
-      key_img_url: "https://my-stake-key-img.com/img.png",
+      nft_policy_id: #"00000000000000000000000000000000000000000000000000000011",
+      nft_img_url: "https://my-stake-nft-img.com/img.png",
     }
 
   let current_time = 0
@@ -203,7 +203,7 @@ test stake_pool_lock_funds() {
       version: 1,
       extra: LockDatum {
         lock_until: current_time + hour_millis + 86_400_000,
-        time_lock_key: #"00000000000000000000000000000000000000000000000000000011",
+        time_lock_nft: #"00000000000000000000000000000000000000000000000000000011",
       },
     }
   let time_lock_data: Data = time_lock_datum

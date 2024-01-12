@@ -219,13 +219,13 @@ test must_have_same_datum_succeed_when_same_datum() {
     TimeLockDatum {
       metadata: dict.new(),
       version: 1,
-      extra: LockDatum { lock_until: 0, time_lock_key: #"" },
+      extra: LockDatum { lock_until: 0, time_lock_nft: #"" },
     }
   let time_lock_datum_2 =
     TimeLockDatum {
       metadata: dict.new(),
       version: 1,
-      extra: LockDatum { lock_until: 0, time_lock_key: #"" },
+      extra: LockDatum { lock_until: 0, time_lock_nft: #"" },
     }
   must_have_same_datum(time_lock_datum_1, time_lock_datum_2)
 }
@@ -235,13 +235,13 @@ test must_have_same_datum_fail_when_different_datum() {
     TimeLockDatum {
       metadata: dict.new(),
       version: 1,
-      extra: LockDatum { lock_until: 0, time_lock_key: #"" },
+      extra: LockDatum { lock_until: 0, time_lock_nft: #"" },
     }
   let time_lock_datum_2 =
     TimeLockDatum {
       metadata: dict.new(),
       version: 1,
-      extra: LockDatum { lock_until: 1, time_lock_key: #"" },
+      extra: LockDatum { lock_until: 1, time_lock_nft: #"" },
     }
   !must_have_same_datum(time_lock_datum_1, time_lock_datum_2)
 }
@@ -251,7 +251,7 @@ test must_have_same_datum_fail_when_different_datum_type() {
     TimeLockDatum {
       metadata: dict.new(),
       version: 1,
-      extra: LockDatum { lock_until: 0, time_lock_key: #"" },
+      extra: LockDatum { lock_until: 0, time_lock_nft: #"" },
     }
   let stake_pool_datum =
     StakePoolDatum {
