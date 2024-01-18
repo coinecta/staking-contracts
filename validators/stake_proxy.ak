@@ -1,37 +1,68 @@
-use aiken/bytearray
+use aiken/bytearray.{drop, take}
 use aiken/dict
 use aiken/interval.{Finite, Interval, IntervalBound}
 use aiken/list.{find}
+use aiken/math/rational
 use aiken/transaction.{
   InlineDatum, Input, NoDatum, Output, OutputReference, ScriptContext, Spend,
   Transaction, TransactionId,
 }
 use aiken/transaction/credential.{
-  Address, ScriptCredential, VerificationKeyCredential, from_verification_key,
+  Address, ScriptCredential, VerificationKeyCredential,
 }
 use aiken/transaction/value.{
   add, from_lovelace, from_minted_value, quantity_of, to_minted_value, zero,
 }
 use staking_contracts/datums.{
-  LockDatum, RewardSetting, StakePoolDatum, StakeProxyDatum, TimeLockDatum,
-  to_time_lock_datum,
+  Destination, LockDatum, RewardSetting, StakePoolDatum, StakeProxyDatum,
+  TimeLockDatum, to_time_lock_datum,
 }
 use staking_contracts/utils.{
-  add_percentage, day_millis, hour_millis, must_be_locked_until,
-  must_be_signed_by, must_have_exactly_one_output, stake_pool_hash,
-  stake_proxy_hash, time_lock_hash,
+  add_reward, hour_millis, must_be_locked_until, must_contain_asset,
+  must_have_exactly_one_output,
+}
+use sundae/multisig.{Signature, satisfied}
+
+validator(time_lock_hash: ByteArray, batcher_certificate) {
+  fn stake_proxy(
+    datum: StakeProxyDatum,
+    _redeemer: Void,
+    ctx: ScriptContext,
+  ) -> Bool {
+    or {
+      refund_transaction(datum, ctx)?,
+      lock_transaction(datum, ctx, time_lock_hash, batcher_certificate)?,
+    }
+  }
 }
 
-validator {
-  fn stake_proxy(datum: StakeProxyDatum, _redeemer: Void, ctx: ScriptContext) {
-    when ctx.purpose is {
-      //The proxy needs to be spend in a locking transaction or in a manual refund
-      Spend(my_output_reference) -> or {
-          must_be_signed_by(ctx.transaction, datum.owner)?,
-          is_proper_locking_tx(my_output_reference, datum, ctx)?,
-        }
-      _ -> False
-    }
+fn refund_transaction(datum: StakeProxyDatum, ctx: ScriptContext) -> Bool {
+  when ctx.purpose is {
+    //The proxy needs to be spent in a manual refund
+    Spend(_) ->
+      satisfied(
+        datum.owner,
+        ctx.transaction.extra_signatories,
+        ctx.transaction.validity_range,
+        ctx.transaction.withdrawals,
+      )?
+    _ -> False
+  }
+}
+
+fn lock_transaction(
+  datum: StakeProxyDatum,
+  ctx: ScriptContext,
+  time_lock_hash: ByteArray,
+  batcher_certificate: ByteArray,
+) -> Bool {
+  when ctx.purpose is {
+    //The proxy needs to be spend in a locking transaction by a certified batcher
+    Spend(my_output_reference) -> and {
+        is_proper_locking_tx(my_output_reference, datum, ctx, time_lock_hash)?,
+        must_contain_asset(ctx.transaction.outputs, batcher_certificate)?,
+      }
+    _ -> False
   }
 }
 
@@ -41,6 +72,7 @@ fn is_proper_locking_tx(
   my_output_reference: OutputReference,
   datum: StakeProxyDatum,
   ctx: ScriptContext,
+  time_lock_hash: ByteArray,
 ) {
   //Find the input this validator is attached to
   expect Some(self) =
@@ -64,71 +96,96 @@ fn is_proper_locking_tx(
     time_lock_output.value
       |> quantity_of(datum.policy_id, datum.asset_name)
 
-  //Find minted stake key
+  //Find minted stake nft
   let minted = from_minted_value(ctx.transaction.mint)
 
-  let minted_policy_id = bytearray.take(time_lock_datum.extra.time_lock_key, 28)
+  let minted_policy_id = bytearray.take(time_lock_datum.extra.time_lock_nft, 28)
 
   let minted_asset_name =
-    bytearray.drop(time_lock_datum.extra.time_lock_key, 28)
+    bytearray.drop(time_lock_datum.extra.time_lock_nft, 28)
 
-  //Make sure the minted key is using the expected policy_id
-  let correct_stake_key_policy_id = minted_policy_id == datum.key_policy_id
+  //Make sure the minted nft is using the expected policy_id
+  let correct_stake_nft_policy_id = minted_policy_id == datum.nft_policy_id
 
   //Make sure only 1 is minted
-  let correct_key_minted =
+  let correct_nft_minted =
     quantity_of(minted, minted_policy_id, minted_asset_name) == 1
 
-  //Make sure the key is minted into the users' wallet
-  expect Some(_key_minted_to_user) =
+  //Make sure the nft is minted into the users' wallet
+  expect Some(_nft_minted_to_user) =
     ctx.transaction.outputs
       |> find(
            fn(o) {
-             quantity_of(o.value, minted_policy_id, minted_asset_name) == 1 && o.address.payment_credential == VerificationKeyCredential(
-               datum.owner,
-             )
+             quantity_of(o.value, minted_policy_id, minted_asset_name) == 1 && o.address == datum.destination.address && o.datum == datum.destination.datum
            },
          )
 
   //Ensure locked tokens is staked + reward
   let correct_locked_tokens =
-    locked_tokens == add_percentage(staked_tokens, datum.reward_percentage)
+    locked_tokens == add_reward(staked_tokens, datum.reward_multiplier)
 
   and {
     //Ensure only one time lock output to avoid unexpected results
     must_have_exactly_one_output(time_lock_outputs)?,
-    correct_stake_key_policy_id?,
+    correct_stake_nft_policy_id?,
     //Make sure the time lock does not lock the assets too long
     must_be_locked_until(
       ctx.transaction.validity_range,
       time_lock_output,
-      datum.days_locked,
+      datum.ms_locked,
       hour_millis,
     )?,
     correct_locked_tokens?,
-    correct_key_minted?,
+    correct_nft_minted?,
   }
 }
 
 test stake_proxy_lock_funds() {
+  let time_lock_hash =
+    #"550cc5a9682bcbbe5583f1006624000032b4d8f4ddd6f37623462ff9"
+
+  let stake_pool_hash =
+    #"7a8a80f13e296da14c3c4e379e1c270ffabb2740a28e983acf75275f"
+
+  let stake_proxy_hash =
+    #"dc404ed342f5bc8344c8e2d21da7a45b8e0f70b5364ee4fda57dae75"
+
+  let batcher_certificate =
+    #"00000000000000000000000000000000000000000000000000000011000643b06921e91f6af4b4eef9d1a9b55ed75c4e09243b3c67edd1f013230d75"
+
+  expect Some(reward) = rational.new(1, 100)
   let stake_pool_datum =
     StakePoolDatum {
-      owner: #"00000000000000000000000000000000000000000000000000000000",
+      owner: Signature(
+        #"00000000000000000000000000000000000000000000000000000000",
+      ),
       decimals: 0,
       policy_id: #"00000000000000000000000000000000000000000000000000000000",
       asset_name: #"000000000000",
-      reward_settings: [RewardSetting { days_locked: 1, percentage_reward: 1 }],
+      reward_settings: [
+        RewardSetting { ms_locked: 86_400_000, reward_multiplier: reward },
+      ],
     }
 
   let stake_proxy_datum =
     StakeProxyDatum {
-      owner: #"00000000000000000000000000000000000000000000000000000000",
-      days_locked: 1,
-      reward_percentage: 1,
+      owner: Signature(
+        #"00000000000000000000000000000000000000000000000000000000",
+      ),
+      destination: Destination {
+        address: Address {
+          payment_credential: VerificationKeyCredential(
+            #"00000000000000000000000000000000000000000000000000000000",
+          ),
+          stake_credential: None,
+        },
+        datum: NoDatum,
+      },
+      ms_locked: 86_400_000,
+      reward_multiplier: reward,
       policy_id: #"00000000000000000000000000000000000000000000000000000000",
       asset_name: #"000000000000",
-      key_policy_id: #"00000000000000000000000000000000000000000000000000000011",
-      key_img_url: "https://my-stake-key-img.com/img.png",
+      nft_policy_id: #"00000000000000000000000000000000000000000000000000000011",
     }
 
   let current_time = 0
@@ -139,14 +196,13 @@ test stake_proxy_lock_funds() {
       metadata: dict.new(),
       version: 1,
       extra: LockDatum {
-        lock_until: current_time + hour_millis + day_millis,
-        time_lock_key: #"00000000000000000000000000000000000000000000000000000011",
+        lock_until: current_time + hour_millis + 86_400_000,
+        time_lock_nft: #"00000000000000000000000000000000000000000000000000000011",
       },
     }
 
   let time_lock_data: Data = time_lock_datum
 
-  let redeemer = Void
   let stake_pool_output_reference =
     OutputReference { transaction_id: TransactionId(""), output_index: 0 }
 
@@ -163,6 +219,18 @@ test stake_proxy_lock_funds() {
              1_000_000_000,
            ),
       datum: InlineDatum(stake_pool_datum),
+      reference_script: None,
+    }
+
+  let batcher_output =
+    Output {
+      address: Address {
+        payment_credential: VerificationKeyCredential(#""),
+        stake_credential: None,
+      },
+      value: from_lovelace(2000000)
+        |> add(batcher_certificate |> take(28), batcher_certificate |> drop(28), 1),
+      datum: NoDatum,
       reference_script: None,
     }
 
@@ -210,11 +278,11 @@ test stake_proxy_lock_funds() {
 
   let user_output =
     Output {
-      address: from_verification_key(stake_proxy_datum.owner),
+      address: stake_proxy_datum.destination.address,
       value: from_lovelace(100000)
-        |> add(stake_proxy_datum.key_policy_id, #"", 1),
+        |> add(stake_proxy_datum.nft_policy_id, #"", 1),
       reference_script: None,
-      datum: NoDatum,
+      datum: stake_proxy_datum.destination.datum,
     }
 
   //datum: stake_pool_datum,
@@ -242,9 +310,14 @@ test stake_proxy_lock_funds() {
              Transaction {
                ..transaction,
                inputs: [stake_pool_input, stake_proxy_input],
-               outputs: [new_stake_pool_output, time_lock_output, user_output],
+               outputs: [
+                 new_stake_pool_output,
+                 time_lock_output,
+                 user_output,
+                 batcher_output,
+               ],
                mint: zero()
-                 |> add(stake_proxy_datum.key_policy_id, #"", 1)
+                 |> add(stake_proxy_datum.nft_policy_id, #"", 1)
                  |> to_minted_value(),
                validity_range: Interval {
                  lower_bound: IntervalBound {
@@ -259,5 +332,10 @@ test stake_proxy_lock_funds() {
              }
            },
     }
-  stake_proxy(stake_proxy_datum, redeemer, context)
+  lock_transaction(
+    stake_proxy_datum,
+    context,
+    time_lock_hash,
+    batcher_certificate,
+  )
 }

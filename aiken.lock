@@ -6,10 +6,22 @@ name = "aiken-lang/stdlib"
 version = "1.7.0"
 source = "github"
 
+[[requirements]]
+name = "SundaeSwap-finance/aicone"
+version = "main"
+source = "github"
+
 [[packages]]
 name = "aiken-lang/stdlib"
 version = "1.7.0"
 requirements = []
 source = "github"
 
+[[packages]]
+name = "SundaeSwap-finance/aicone"
+version = "main"
+requirements = []
+source = "github"
+
 [etags]
+"SundaeSwap-finance/aicone@main" = [{ secs_since_epoch = 1705599748, nanos_since_epoch = 220428000 }, "2bf1927e490547806fab94d01e5dfb65a8db56948c88f52cf2936400bc828264"]

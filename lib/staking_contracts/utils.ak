@@ -1,15 +1,19 @@
-use aiken/bytearray
+use aiken/bytearray.{drop, take}
 use aiken/dict
 use aiken/interval.{Finite}
-use aiken/list.{has, length}
+use aiken/list.{find, has, length}
 use aiken/math
+use aiken/math/rational.{Rational}
+use aiken/option.{is_some}
 use aiken/string
 use aiken/time.{PosixTime}
 use aiken/transaction.{InlineDatum, Output, Transaction, ValidityRange}
+use aiken/transaction/value.{quantity_of}
 use staking_contracts/datums.{
   LockDatum, StakePoolDatum, TimeLockDatum, VerificationKeyHash,
   to_time_lock_datum,
 }
+use sundae/multisig.{Signature}
 
 pub fn must_have_exactly_one_output(outputs: List<Output>) {
   length(outputs) == 1
@@ -23,31 +27,32 @@ pub fn must_be_signed_by(transaction: Transaction, vk: VerificationKeyHash) {
   has(transaction.extra_signatories, vk)
 }
 
-pub fn add_percentage(amount: Int, percentage: Int) -> Int {
-  amount * ( 100 + percentage ) / 100
+pub fn add_reward(amount: Int, reward: Rational) -> Int {
+  rational.floor(
+    rational.mul(
+      rational.from_int(amount),
+      rational.add(rational.from_int(1), reward),
+    ),
+  )
 }
 
-pub const day_millis = 86_400_000
-
-//pub const day_millis = 3_600_000
+//Returns true if the list of outputs contains at least 1 of the provided unit
+pub fn must_contain_asset(outputs: List<Output>, unit: ByteArray) -> Bool {
+  let policy_id = unit |> take(28)
+  let asset_id = unit |> drop(28)
+  is_some(
+    outputs |> find(fn(o) { quantity_of(o.value, policy_id, asset_id) > 0 }),
+  )
+}
 
 pub const hour_millis = 3_600_000
-
-pub const time_lock_hash =
-  #"550cc5a9682bcbbe5583f1006624000032b4d8f4ddd6f37623462ff9"
-
-pub const stake_pool_hash =
-  #"7a8a80f13e296da14c3c4e379e1c270ffabb2740a28e983acf75275f"
-
-pub const stake_proxy_hash =
-  #"dc404ed342f5bc8344c8e2d21da7a45b8e0f70b5364ee4fda57dae75"
 
 //Ensure that the time_lock output is set to expire after a set amount of days, with a certain buffer
 //to allow for a realistic transaction validity range
 pub fn must_be_locked_until(
   range: ValidityRange,
   time_lock: Output,
-  days_to_be_locked: Int,
+  ms_to_be_locked: Int,
   buffer: Int,
 ) {
   expect InlineDatum(time_lock_datum) = time_lock.datum
@@ -57,13 +62,13 @@ pub fn must_be_locked_until(
     //This ensures for the user that the assets are not locked longer than expected
     when range.lower_bound.bound_type is {
       Finite(tx_earliest_time) ->
-        tx_earliest_time + days_to_be_locked * day_millis + buffer >= lock_expiration_time
+        tx_earliest_time + ms_to_be_locked + buffer >= lock_expiration_time
       _ -> False
     }?,
     //This ensures assets are locked for at least the required amount as configured in the stake pool
     when range.upper_bound.bound_type is {
       Finite(tx_latest_time) ->
-        tx_latest_time + days_to_be_locked * day_millis - buffer <= lock_expiration_time
+        tx_latest_time + ms_to_be_locked - buffer <= lock_expiration_time
       _ -> False
     }?,
   }
@@ -76,6 +81,7 @@ pub fn must_start_after(range: ValidityRange, lock_expiration_time: PosixTime) {
   }?
 }
 
+//Abbreviates an amount to make it more readable to the user
 pub fn abbreviated_amount(amount: Int, decimals: Int) -> ByteArray {
   let amount_dec = amount / math.pow(10, decimals)
   let quadrillions = amount_dec / 1_000_000_000_000
@@ -105,6 +111,7 @@ pub fn abbreviated_amount(amount: Int, decimals: Int) -> ByteArray {
   }
 }
 
+//Produces a date string in the format YYYYMMDD
 //Taken from https://stackoverflow.com/questions/7136385/calculate-day-number-from-an-unix-timestamp-in-a-math-way
 pub fn time_to_date_string(time: PosixTime) -> ByteArray {
   let s = time / 1000
@@ -215,13 +222,13 @@ test must_have_same_datum_succeed_when_same_datum() {
     TimeLockDatum {
       metadata: dict.new(),
       version: 1,
-      extra: LockDatum { lock_until: 0, time_lock_key: #"" },
+      extra: LockDatum { lock_until: 0, time_lock_nft: #"" },
     }
   let time_lock_datum_2 =
     TimeLockDatum {
       metadata: dict.new(),
       version: 1,
-      extra: LockDatum { lock_until: 0, time_lock_key: #"" },
+      extra: LockDatum { lock_until: 0, time_lock_nft: #"" },
     }
   must_have_same_datum(time_lock_datum_1, time_lock_datum_2)
 }
@@ -231,13 +238,13 @@ test must_have_same_datum_fail_when_different_datum() {
     TimeLockDatum {
       metadata: dict.new(),
       version: 1,
-      extra: LockDatum { lock_until: 0, time_lock_key: #"" },
+      extra: LockDatum { lock_until: 0, time_lock_nft: #"" },
     }
   let time_lock_datum_2 =
     TimeLockDatum {
       metadata: dict.new(),
       version: 1,
-      extra: LockDatum { lock_until: 1, time_lock_key: #"" },
+      extra: LockDatum { lock_until: 1, time_lock_nft: #"" },
     }
   !must_have_same_datum(time_lock_datum_1, time_lock_datum_2)
 }
@@ -247,7 +254,7 @@ test must_have_same_datum_fail_when_different_datum_type() {
     TimeLockDatum {
       metadata: dict.new(),
       version: 1,
-      extra: LockDatum { lock_until: 0, time_lock_key: #"" },
+      extra: LockDatum { lock_until: 0, time_lock_nft: #"" },
     }
   let stake_pool_datum =
     StakePoolDatum {
@@ -255,17 +262,19 @@ test must_have_same_datum_fail_when_different_datum_type() {
       reward_settings: [],
       policy_id: #"",
       asset_name: #"",
-      owner: #"",
+      owner: Signature(#""),
     }
   !must_have_same_datum(time_lock_datum, stake_pool_datum)
 }
 
-test add_percentage_succeed_normal_case() {
-  add_percentage(1000, 1) == 1010
+test add_reward_succeed_normal_case() {
+  expect Some(r) = rational.new(1, 100)
+  add_reward(1000, r) == 1010
 }
 
-test add_percentage_succeed_floored_value() {
-  add_percentage(90, 1) == 90
+test add_reward_succeed_floored_value() {
+  expect Some(r) = rational.new(1, 100)
+  add_reward(90, r) == 90
 }
 
 test must_start_after_succeed_when_lower_bound_is_after() {

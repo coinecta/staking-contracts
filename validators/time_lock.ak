@@ -9,7 +9,7 @@ validator {
     when ctx.purpose is {
       //This utxo can only be spend by its owner and after the unlock time has passed
       Spend(_) -> and {
-          key_is_burned(ctx.transaction.mint, datum.extra.time_lock_key),
+          nft_is_burned(ctx.transaction.mint, datum.extra.time_lock_nft),
           must_start_after(
             ctx.transaction.validity_range,
             datum.extra.lock_until,
@@ -20,8 +20,8 @@ validator {
   }
 }
 
-fn key_is_burned(minted: MintedValue, key: ByteArray) {
+fn nft_is_burned(minted: MintedValue, nft: ByteArray) {
   let minted_value = from_minted_value(minted)
-  let minted_amount = minted_value |> quantity_of(take(key, 28), drop(key, 28))
+  let minted_amount = minted_value |> quantity_of(take(nft, 28), drop(nft, 28))
   minted_amount == -1
 }

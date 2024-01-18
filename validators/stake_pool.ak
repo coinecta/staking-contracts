@@ -1,36 +1,68 @@
 use aiken/dict
 use aiken/interval.{Finite, Interval, IntervalBound}
 use aiken/list.{at}
+use aiken/math/rational
 use aiken/transaction.{
-  InlineDatum, Input, Output, OutputReference, ScriptContext, Spend, Transaction,
-  TransactionId,
+  InlineDatum, Input, NoDatum, Output, OutputReference, ScriptContext, Spend,
+  Transaction, TransactionId,
 }
-use aiken/transaction/credential.{Address, ScriptCredential}
+use aiken/transaction/credential.{
+  Address, ScriptCredential, VerificationKeyCredential,
+}
 use aiken/transaction/value.{add, from_lovelace}
 use staking_contracts/datums.{
-  LockDatum, RewardSetting, StakePoolDatum, StakePoolRedeemer, StakeProxyDatum,
-  TimeLockDatum,
+  Destination, LockDatum, RewardSetting, StakePoolDatum, StakePoolRedeemer,
+  StakeProxyDatum, TimeLockDatum,
 }
 use staking_contracts/utils.{
-  add_percentage, day_millis, hour_millis, must_be_locked_until,
-  must_be_signed_by, must_have_exactly_one_output, stake_pool_hash,
-  stake_proxy_hash, time_lock_hash,
+  add_reward, hour_millis, must_be_locked_until, must_have_exactly_one_output,
 }
+use sundae/multisig.{Signature, satisfied}
 
-validator {
+validator(time_lock_hash: ByteArray) {
   fn stake_pool(
     datum: StakePoolDatum,
     redeemer: StakePoolRedeemer,
     ctx: ScriptContext,
-  ) {
-    when ctx.purpose is {
-      //Ensure the utxo is spent by either the owner or a valid locking tx
-      Spend(my_output_reference) -> or {
-          must_be_signed_by(ctx.transaction, datum.owner)?,
-          is_proper_locking_tx(my_output_reference, datum, redeemer, ctx)?,
-        }
-      _ -> False
+  ) -> Bool {
+    or {
+      update_transaction(datum, ctx)?,
+      lock_transaction(datum, redeemer, ctx, time_lock_hash)?,
     }
+  }
+}
+
+fn update_transaction(datum: StakePoolDatum, ctx: ScriptContext) -> Bool {
+  when ctx.purpose is {
+    //Ensure the utxo is spent by the owner
+    Spend(_) ->
+      satisfied(
+        datum.owner,
+        ctx.transaction.extra_signatories,
+        ctx.transaction.validity_range,
+        ctx.transaction.withdrawals,
+      )?
+    _ -> False
+  }
+}
+
+fn lock_transaction(
+  datum: StakePoolDatum,
+  redeemer: StakePoolRedeemer,
+  ctx: ScriptContext,
+  time_lock_hash: ByteArray,
+) -> Bool {
+  when ctx.purpose is {
+    //Ensure the utxo is spent in a valid locking tx
+    Spend(my_output_reference) ->
+      is_proper_locking_tx(
+        my_output_reference,
+        datum,
+        redeemer,
+        ctx,
+        time_lock_hash,
+      )?
+    _ -> False
   }
 }
 
@@ -39,6 +71,7 @@ fn is_proper_locking_tx(
   datum: StakePoolDatum,
   redeemer: StakePoolRedeemer,
   ctx: ScriptContext,
+  time_lock_hash: ByteArray,
 ) {
   //Find the input guarded by this validator
   expect Some(self) =
@@ -84,10 +117,7 @@ fn is_proper_locking_tx(
 
   //Ensure the locked amount matches the reward setting
   let correct_locked_amount =
-    locked_amount == add_percentage(
-      staked_amount,
-      reward_setting.percentage_reward,
-    )
+    locked_amount == add_reward(staked_amount, reward_setting.reward_multiplier)
 
   //Make sure no other assets have been altered in the stake pool output compared to the input
   let correct_output_value =
@@ -112,7 +142,7 @@ fn is_proper_locking_tx(
     must_be_locked_until(
       ctx.transaction.validity_range,
       time_lock,
-      reward_setting.days_locked,
+      reward_setting.ms_locked,
       hour_millis,
     )?,
     correct_output_value?,
@@ -120,24 +150,47 @@ fn is_proper_locking_tx(
 }
 
 test stake_pool_lock_funds() {
+  let time_lock_hash =
+    #"550cc5a9682bcbbe5583f1006624000032b4d8f4ddd6f37623462ff9"
+
+  let stake_pool_hash =
+    #"7a8a80f13e296da14c3c4e379e1c270ffabb2740a28e983acf75275f"
+
+  let stake_proxy_hash =
+    #"dc404ed342f5bc8344c8e2d21da7a45b8e0f70b5364ee4fda57dae75"
+  expect Some(reward) = rational.new(1, 100)
   let stake_pool_datum =
     StakePoolDatum {
-      owner: #"00000000000000000000000000000000000000000000000000000000",
+      owner: Signature(
+        #"00000000000000000000000000000000000000000000000000000000",
+      ),
       decimals: 0,
       policy_id: #"00000000000000000000000000000000000000000000000000000000",
       asset_name: #"000000000000",
-      reward_settings: [RewardSetting { days_locked: 1, percentage_reward: 1 }],
+      reward_settings: [
+        RewardSetting { ms_locked: 86_400_000, reward_multiplier: reward },
+      ],
     }
 
   let stake_proxy_datum =
     StakeProxyDatum {
-      owner: #"00000000000000000000000000000000000000000000000000000000",
-      days_locked: 1,
-      reward_percentage: 1,
+      owner: Signature(
+        #"00000000000000000000000000000000000000000000000000000000",
+      ),
+      destination: Destination {
+        address: Address {
+          payment_credential: VerificationKeyCredential(
+            #"00000000000000000000000000000000000000000000000000000000",
+          ),
+          stake_credential: None,
+        },
+        datum: NoDatum,
+      },
+      ms_locked: 86_400_000,
+      reward_multiplier: reward,
       policy_id: #"00000000000000000000000000000000000000000000000000000000",
       asset_name: #"000000000000",
-      key_policy_id: #"00000000000000000000000000000000000000000000000000000011",
-      key_img_url: "https://my-stake-key-img.com/img.png",
+      nft_policy_id: #"00000000000000000000000000000000000000000000000000000011",
     }
 
   let current_time = 0
@@ -148,8 +201,8 @@ test stake_pool_lock_funds() {
       metadata: dict.new(),
       version: 1,
       extra: LockDatum {
-        lock_until: current_time + hour_millis + day_millis,
-        time_lock_key: #"00000000000000000000000000000000000000000000000000000011",
+        lock_until: current_time + hour_millis + 86_400_000,
+        time_lock_nft: #"00000000000000000000000000000000000000000000000000000011",
       },
     }
   let time_lock_data: Data = time_lock_datum
@@ -255,5 +308,5 @@ test stake_pool_lock_funds() {
              }
            },
     }
-  stake_pool(stake_pool_datum, redeemer, context)
+  lock_transaction(stake_pool_datum, redeemer, context, time_lock_hash)
 }
