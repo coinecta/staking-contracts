@@ -1,31 +1,35 @@
-import { Blockfrost, Data, Lucid, Network, Script, fromHex, fromText, toHex } from "https://deno.land/x/lucid@0.10.7/mod.ts";
+import { Blockfrost, Constr, Data, Lucid, Network, Script, applyParamsToScript, fromHex, fromText, toHex } from "https://deno.land/x/lucid@0.10.7/mod.ts";
 import { config } from "https://deno.land/x/dotenv@v3.2.2/mod.ts";
+import stakingValidatorsBP from "../../plutus.json" with { type: "json" };
+import { Signature, Rational, MultisigScript, DataConvert, Credential, Address, StakeCredential } from "./Datums.ts";
+import { Destination } from "./Datums.ts";
+import { NoDatum } from "./Datums.ts";
 
 const env = config();
 
 const reference_prefix = "000643b0";
 const stake_key_prefix = "000de140";
 
-import stakingValidatorsBP from "../../plutus.json" assert { type: "json" };
-
-const RewardSetting = Data.Object({
-    days_locked: Data.Integer(),
-    percentage_reward: Data.Integer(),
+const cnctPolicyId = "8b05e87a51c1d4a0fa888d2bb14dbc25e8c343ea379a171b63aa84a0";
+const cnctAssetName = "434e4354";
+const RewardSettingSchema = Data.Object({
+    ms_locked: Data.Integer(),
+    reward_multiplier: Data.Any(),
 });
-type RewardSetting = Data.Static<typeof RewardSetting>;
-
+type RewardSetting = Data.Static<typeof RewardSettingSchema>;
+const RewardSetting = RewardSettingSchema as unknown as RewardSetting;
 const StakePoolDatumSchema = Data.Object({
-    reward_settings: Data.Array(RewardSetting),
+    reward_settings: Data.Array(RewardSettingSchema),
     policy_id: Data.Bytes(),
     asset_name: Data.Bytes(),
-    owner: Data.Bytes(),
+    owner: Data.Any(),
     decimals: Data.Integer(),
 });
 type StakePoolDatum = Data.Static<typeof StakePoolDatumSchema>;
 const StakePoolDatum = StakePoolDatumSchema as unknown as StakePoolDatum;
 
 const StakePoolProxyDatumSchema = Data.Object({
-    owner: Data.Bytes(),
+    owner: Data.Any(),
     days_locked: Data.Integer(),
     reward_percentage: Data.Integer(),
     policy_id: Data.Bytes(),
@@ -82,12 +86,12 @@ const walletAddressDetails = lucid.utils.getAddressDetails(walletAddress);
 
 const stakingValidatorScript: Script = {
     type: "PlutusV2",
-    script: stakingValidatorsBP.validators[1].compiledCode,
+    script: applyParamsToScript(stakingValidatorsBP.validators[1].compiledCode, [stakingValidatorsBP.validators[3].hash]),
 };
 
 const stakingProxyValidatorScript: Script = {
     type: "PlutusV2",
-    script: stakingValidatorsBP.validators[2].compiledCode,
+    script: applyParamsToScript(stakingValidatorsBP.validators[2].compiledCode, [stakingValidatorsBP.validators[3].hash, cnctPolicyId + cnctAssetName]),
 };
 
 const timeLockValidatorScript: Script = {
@@ -113,8 +117,6 @@ const timeLockValidatorAddress = lucid.utils.validatorToAddress(
 );
 
 const stakingMintPolicyId = lucid.utils.mintingPolicyToId(stakingMintPolicy);
-const cnctPolicyId = "8b05e87a51c1d4a0fa888d2bb14dbc25e8c343ea379a171b63aa84a0";
-const cnctAssetName = "434e4354";
 const subject = cnctPolicyId + cnctAssetName;
 
 const abbreviatedAmount = (amount: bigint, decimals: bigint): string => {
@@ -167,11 +169,6 @@ const timeToDatestring = (time: bigint): string => {
     return yearString + monthString + dayString;
 }
 
-
-
-
-
-
 console.log("Wallet address:", walletAddress);
 console.log("Staking Validator Address:", stakingValidatorAddress);
 console.log("Staking Proxy Validator Address:", stakingProxyValidatorAddress);
@@ -211,13 +208,13 @@ if (Deno.args[0] === "--mint-cnct") {
 
 if (Deno.args[0] === "--create-stake-pool") {
     const stakePoolDatum: StakePoolDatum = {
-        owner: walletAddressDetails.paymentCredential!.hash,
+        owner: new Signature(walletAddressDetails.paymentCredential?.hash!).toData(),
         policy_id: cnctPolicyId,
         asset_name: cnctAssetName,
         reward_settings: [
             {
-                days_locked: 1n,
-                percentage_reward: 1n,
+                ms_locked: 100n,
+                reward_multiplier: new Rational(5n, 100n).toData()
             }
         ],
         decimals: 6n
@@ -238,7 +235,7 @@ if (Deno.args[0] === "--create-stake-pool") {
 
 if (Deno.args[0] === "--stake") {
     const stakePoolProxyDatum: StakePoolProxyDatum = {
-        owner: walletAddressDetails.paymentCredential!.hash,
+        owner: new Signature(walletAddressDetails.paymentCredential!.hash).toData(),
         policy_id: cnctPolicyId,
         asset_name: cnctAssetName,
         key_policy_id: stakingMintPolicyId,
@@ -295,12 +292,16 @@ if (Deno.args[0] === "--cancel-stake") {
 
 if (Deno.args[0] === "--unlock-pool") {
     const utxosAtValidator = await lucid.utxosAt(stakingValidatorAddress);
-    console.log("UTXOs at validator: ", utxosAtValidator);
+    console.log("UTXOs at Pool Validator: ", utxosAtValidator);
     const myUtxos = utxosAtValidator.filter((utxo) => {
         if (utxo.datum !== null && utxo.datum !== undefined) {
             try {
                 const _stakePoolDatum = Data.from(utxo.datum, StakePoolDatum);
-                if (_stakePoolDatum.owner === walletAddressDetails.paymentCredential?.hash) {
+                const _ownerMultisigDatum = DataConvert.fromData<Signature>(_stakePoolDatum.owner, Signature);
+                const _rewardSettings = _stakePoolDatum.reward_settings;
+                const _rewardMultiplier = DataConvert.fromData<Rational>(_rewardSettings[0].reward_multiplier, Rational);
+                console.log({ _ownerMultisigDatum, _rewardMultiplier });
+                if (_ownerMultisigDatum.key_hash === walletAddressDetails.paymentCredential?.hash) {
                     return true;
                 }
             }
@@ -311,7 +312,7 @@ if (Deno.args[0] === "--unlock-pool") {
         return false;
     });
 
-    console.log("My UTXOs: ", myUtxos);
+    console.log("My Pool UTXOs: ", myUtxos);
 
     const unlockTx = await lucid
         .newTx()
@@ -490,4 +491,48 @@ if (Deno.args[0] === "--setup-collateral") {
     await lucid.provider.awaitTx(txHash);
 
     console.log("Setup collateral complete");
+}
+
+if (Deno.args[0] === "--test") {
+    console.log(walletAddressDetails.paymentCredential?.hash);
+    const signature: MultisigScript = new Signature(walletAddressDetails.paymentCredential?.hash!);
+
+    const stakePoolDatum: StakePoolDatum = {
+        owner: new Constr(0, ["0c61f135f652bc17994a5411d0a256de478ea24dbc19759d2ba14f03"]),
+        policy_id: "8b05e87a51c1d4a0fa888d2bb14dbc25e8c343ea379a171b63aa84a0",
+        asset_name: "434e4354",
+        reward_settings: [
+            {
+                ms_locked: 100n,
+                reward_multiplier: new Rational(5n, 100n).toData()
+            }
+        ],
+        decimals: 6n
+    };
+
+    const rationalTest = new Rational(5n, 100n).toData();
+    console.log("Multisig Signature Type", signature.toData());
+    console.log("Stake Pool Datum Type", Data.to(stakePoolDatum, StakePoolDatum));
+    console.log("Policy", cnctPolicyId);
+    console.log("Asset", cnctAssetName);
+
+    const credential = new Credential("cb84310092f8c3dae1ebf0ac456114e487297d3fe684d3236588d5b3");
+    console.log("Credential", Data.to(credential.toData()));
+
+    const addressWithStake = new Address(
+        credential,
+        new StakeCredential(credential)
+    )
+    console.log("Address with Stake", Data.to(addressWithStake.toData()));
+
+    const addressWithNoStake = new Address(
+        credential
+    );
+    console.log("Address with No Stake", Data.to(addressWithNoStake.toData()));
+
+    const destination = new Destination(
+        addressWithStake,
+        new NoDatum()
+    );
+    console.log("Destination", Data.to(destination.toData()));
 }
