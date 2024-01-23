@@ -1,9 +1,9 @@
-import { Blockfrost, Constr, Data, Lucid, Network, Script, applyParamsToScript, fromHex, fromText, toHex } from "https://deno.land/x/lucid@0.10.7/mod.ts";
+import { Blockfrost, Constr, Data, Lucid, Network, Script, applyParamsToScript, fromHex, fromText, toHex, C, toText } from "https://deno.land/x/lucid@0.10.7/mod.ts";
+const { hash_blake2b256 } = C;
 import { config } from "https://deno.land/x/dotenv@v3.2.2/mod.ts";
 import stakingValidatorsBP from "../../plutus.json" with { type: "json" };
-import { Signature, Rational, MultisigScript, DataConvert, Credential, Address, StakeCredential } from "./Datums.ts";
-import { Destination } from "./Datums.ts";
-import { NoDatum } from "./Datums.ts";
+import { Signature, Rational, MultisigScript, DataConvert, Credential, Address, StakeCredential, Destination, NoDatum } from "./Datums.ts";
+import { add_reward, powBigInt } from "./Utils.ts";
 
 const env = config();
 
@@ -30,12 +30,12 @@ const StakePoolDatum = StakePoolDatumSchema as unknown as StakePoolDatum;
 
 const StakePoolProxyDatumSchema = Data.Object({
     owner: Data.Any(),
-    days_locked: Data.Integer(),
-    reward_percentage: Data.Integer(),
+    destination: Data.Any(),
+    ms_locked: Data.Integer(),
+    reward_multiplier: Data.Any(),
     policy_id: Data.Bytes(),
     asset_name: Data.Bytes(),
-    key_policy_id: Data.Bytes(),
-    key_img_url: Data.Bytes(),
+    nft_policy_id: Data.Bytes(),
 });
 
 type StakePoolProxyDatum = Data.Static<typeof StakePoolProxyDatumSchema>;
@@ -74,6 +74,21 @@ const StakeKeyMintRedeemerSchema = Data.Object({
 type StakeKeyMintRedeemer = Data.Static<typeof StakeKeyMintRedeemerSchema>;
 const StakeKeyMintRedeemer = StakeKeyMintRedeemerSchema as unknown as StakeKeyMintRedeemer;
 
+const TransactionIdSchema = Data.Object({
+    hash: Data.Bytes(),
+});
+type TransactionId = Data.Static<typeof TransactionIdSchema>;
+const TransactionId = TransactionIdSchema as unknown as TransactionId;
+
+const OutputReferenceSchema = Data.Object({
+    transaction_id: TransactionIdSchema,
+    output_index: Data.Integer(),
+});
+type OutputReference = Data.Static<typeof OutputReferenceSchema>;
+const OutputReference = OutputReferenceSchema as unknown as OutputReference;
+
+
+
 const lucid = await Lucid.new(
     new Blockfrost("https://cardano-preview.blockfrost.io/api/v0", env["BLOCKFROST_API_KEY"]!),
     env["BLOCKFROST_NETWORK"]! as Network,
@@ -84,6 +99,18 @@ lucid.selectWalletFromSeed(env["MNEMONIC"]!);
 const walletAddress = await lucid.wallet.address();
 const walletAddressDetails = lucid.utils.getAddressDetails(walletAddress);
 
+const batchingCertificatePolicy = lucid.utils.nativeScriptFromJson(
+    {
+        type: "all",
+        scripts: [
+            { type: "sig", keyHash: walletAddressDetails.paymentCredential?.hash },
+        ],
+    },
+);
+
+const batchingCertificatePolicyId = lucid.utils.mintingPolicyToId(batchingCertificatePolicy);
+const batchingSubject = batchingCertificatePolicyId + fromText("CERTIFICATE");
+
 const stakingValidatorScript: Script = {
     type: "PlutusV2",
     script: applyParamsToScript(stakingValidatorsBP.validators[1].compiledCode, [stakingValidatorsBP.validators[3].hash]),
@@ -91,7 +118,7 @@ const stakingValidatorScript: Script = {
 
 const stakingProxyValidatorScript: Script = {
     type: "PlutusV2",
-    script: applyParamsToScript(stakingValidatorsBP.validators[2].compiledCode, [stakingValidatorsBP.validators[3].hash, cnctPolicyId + cnctAssetName]),
+    script: applyParamsToScript(stakingValidatorsBP.validators[2].compiledCode, [stakingValidatorsBP.validators[3].hash, batchingSubject]),
 };
 
 const timeLockValidatorScript: Script = {
@@ -101,7 +128,7 @@ const timeLockValidatorScript: Script = {
 
 const stakingMintPolicy: Script = {
     type: "PlutusV2",
-    script: stakingValidatorsBP.validators[0].compiledCode,
+    script: applyParamsToScript(stakingValidatorsBP.validators[0].compiledCode, [stakingValidatorsBP.validators[3].hash, stakingValidatorsBP.validators[1].hash]),
 };
 
 const stakingValidatorAddress = lucid.utils.validatorToAddress(
@@ -117,7 +144,7 @@ const timeLockValidatorAddress = lucid.utils.validatorToAddress(
 );
 
 const stakingMintPolicyId = lucid.utils.mintingPolicyToId(stakingMintPolicy);
-const subject = cnctPolicyId + cnctAssetName;
+const cnctSubject = cnctPolicyId + cnctAssetName;
 
 const abbreviatedAmount = (amount: bigint, decimals: bigint): string => {
     const ten = BigInt(10);
@@ -174,8 +201,11 @@ console.log("Staking Validator Address:", stakingValidatorAddress);
 console.log("Staking Proxy Validator Address:", stakingProxyValidatorAddress);
 console.log("TimeLock Validator Address:", timeLockValidatorAddress);
 console.log("Staking Mint Policy Id:", stakingMintPolicyId);
+console.log("CNCT PolicyId", cnctPolicyId);
+console.log("CNCT AssetName", cnctAssetName);
+console.log("Mint Certificate Policy Id:", batchingCertificatePolicyId);
 
-const mintingPolicy = lucid.utils.nativeScriptFromJson(
+const cnctMintingPolicy = lucid.utils.nativeScriptFromJson(
     {
         type: "all",
         scripts: [
@@ -189,13 +219,13 @@ const mintingPolicy = lucid.utils.nativeScriptFromJson(
 );
 
 if (Deno.args[0] === "--mint-cnct") {
-    const policyId = lucid.utils.mintingPolicyToId(mintingPolicy);
-    const unit = policyId + fromText("CNCT");
+    const policyId = lucid.utils.mintingPolicyToId(cnctMintingPolicy);
+    const cnctSubject = policyId + fromText("CNCT");
 
     const tx = await lucid.newTx()
-        .mintAssets({ [unit]: 800000000000n })
+        .mintAssets({ [cnctSubject]: 800000000000n })
         .validTo(Date.now() + 200000)
-        .attachMintingPolicy(mintingPolicy)
+        .attachMintingPolicy(cnctMintingPolicy)
         .complete();
 
     const signedTx = await tx.sign().complete();
@@ -213,16 +243,16 @@ if (Deno.args[0] === "--create-stake-pool") {
         asset_name: cnctAssetName,
         reward_settings: [
             {
-                ms_locked: 100n,
-                reward_multiplier: new Rational(5n, 100n).toData()
+                ms_locked: 1000n * 60n * 5n, // 5 minutes
+                reward_multiplier: new Rational(5n, 100n).toData() // 5%
             }
         ],
-        decimals: 6n
+        decimals: 0n
     };
 
     const tx = await lucid
         .newTx()
-        .payToContract(stakingValidatorAddress, { inline: Data.to(stakePoolDatum, StakePoolDatum) }, { [subject]: 100000n })
+        .payToContract(stakingValidatorAddress, { inline: Data.to(stakePoolDatum, StakePoolDatum) }, { [cnctSubject]: 100000n })
         .complete();
 
     const signedTx = await tx.sign().complete();
@@ -238,15 +268,21 @@ if (Deno.args[0] === "--stake") {
         owner: new Signature(walletAddressDetails.paymentCredential!.hash).toData(),
         policy_id: cnctPolicyId,
         asset_name: cnctAssetName,
-        key_policy_id: stakingMintPolicyId,
-        days_locked: 1n,
-        reward_percentage: 1n,
-        key_img_url: fromText("http://image.com"),
+        nft_policy_id: stakingMintPolicyId,
+        ms_locked: 1000n * 60n * 5n, // 5 minutes,
+        reward_multiplier: new Rational(5n, 100n).toData(), // 5%
+        destination: new Destination(
+            new Address(
+                new Credential(walletAddressDetails.paymentCredential!.hash),
+                new StakeCredential(new Credential(walletAddressDetails.stakeCredential!.hash))
+            ),
+            new NoDatum()
+        ).toData()
     };
 
     const tx = await lucid
         .newTx()
-        .payToContract(stakingProxyValidatorAddress, { inline: Data.to(stakePoolProxyDatum, StakePoolProxyDatum) }, { [subject]: 1000n })
+        .payToContract(stakingProxyValidatorAddress, { inline: Data.to(stakePoolProxyDatum, StakePoolProxyDatum) }, { [cnctSubject]: 1000n })
         .complete();
 
     const signedTx = await tx.sign().complete();
@@ -264,7 +300,8 @@ if (Deno.args[0] === "--cancel-stake") {
         if (utxo.datum !== null && utxo.datum !== undefined) {
             try {
                 const _stakePoolDatum = Data.from(utxo.datum, StakePoolProxyDatum);
-                if (_stakePoolDatum.owner === walletAddressDetails.paymentCredential?.hash) {
+                const _ownerMultisigDatum = DataConvert.fromData<Signature>(_stakePoolDatum.owner, Signature);
+                if (_ownerMultisigDatum.key_hash === walletAddressDetails.paymentCredential?.hash) {
                     return true;
                 }
             }
@@ -297,9 +334,9 @@ if (Deno.args[0] === "--unlock-pool") {
         if (utxo.datum !== null && utxo.datum !== undefined) {
             try {
                 const _stakePoolDatum = Data.from(utxo.datum, StakePoolDatum);
-                const _ownerMultisigDatum = DataConvert.fromData<Signature>(_stakePoolDatum.owner, Signature);
+                const _ownerMultisigDatum = DataConvert.fromData(_stakePoolDatum.owner, Signature);
                 const _rewardSettings = _stakePoolDatum.reward_settings;
-                const _rewardMultiplier = DataConvert.fromData<Rational>(_rewardSettings[0].reward_multiplier, Rational);
+                const _rewardMultiplier = DataConvert.fromData(_rewardSettings[0].reward_multiplier, Rational);
                 console.log({ _ownerMultisigDatum, _rewardMultiplier });
                 if (_ownerMultisigDatum.key_hash === walletAddressDetails.paymentCredential?.hash) {
                     return true;
@@ -346,7 +383,8 @@ if (Deno.args[0] === "--execute-stake") {
             if (utxo.datum !== null && utxo.datum !== undefined) {
                 try {
                     const _stakePoolDatum = Data.from(utxo.datum, StakePoolProxyDatum);
-                    if (_stakePoolDatum.owner === walletAddressDetails.paymentCredential?.hash) {
+                    const _ownerMultisigDatum = DataConvert.fromData(_stakePoolDatum.owner, Signature);
+                    if (_ownerMultisigDatum.key_hash === walletAddressDetails.paymentCredential?.hash) {
                         return true;
                     }
                 }
@@ -364,7 +402,8 @@ if (Deno.args[0] === "--execute-stake") {
             if (utxo.datum !== null && utxo.datum !== undefined) {
                 try {
                     const _stakePoolDatum = Data.from(utxo.datum, StakePoolDatum);
-                    if (_stakePoolDatum.owner === walletAddressDetails.paymentCredential?.hash) {
+                    const _stakePoolOwnerMultisigDatum = DataConvert.fromData(_stakePoolDatum.owner, Signature);
+                    if (_stakePoolOwnerMultisigDatum.key_hash === walletAddressDetails.paymentCredential?.hash) {
                         return true;
                     }
                 }
@@ -380,57 +419,98 @@ if (Deno.args[0] === "--execute-stake") {
         if (validStakePoolUtxos.length === 0 || validStakeProxyUtxos.length === 0) {
             console.log("No valid stake pool or stake proxy UTXOs found, waiting for 10 seconds...");
             await new Promise((resolve) => setTimeout(resolve, 10000));
-            continue;
         }
 
         const stakePoolUtxo = validStakePoolUtxos[0];
         const stakeProxyUtxo = validStakeProxyUtxos[0];
+
+        const stakeNftAssetName = toHex(hash_blake2b256(fromHex(Data.to({
+            transaction_id: {
+                hash: stakePoolUtxo.txHash,
+            },
+            output_index: BigInt(stakePoolUtxo.outputIndex),
+        }, OutputReference).substring(0, 56))));
+
         const stakeOrderDatum = Data.from(stakeProxyUtxo.datum!, StakePoolProxyDatum);
         const stakePoolDatum = Data.from(stakePoolUtxo.datum!, StakePoolDatum);
-        const poolAmount = stakePoolUtxo.assets[subject];
-        const stakeAmount = stakeProxyUtxo.assets[subject];
-        const lockedTotal = stakeAmount * (100n + stakeOrderDatum.reward_percentage) / 100n;
-        const reward = lockedTotal - stakeAmount;
-        const newStakePoolAmount = poolAmount - reward;
+        const poolAmount = stakePoolUtxo.assets[cnctSubject];
+        const stakeAmount = stakeProxyUtxo.assets[cnctSubject];
+        const rewardMultiplier = DataConvert.fromData(stakeOrderDatum.reward_multiplier, Rational);
+        const rewardTotal = add_reward(stakeAmount, rewardMultiplier);
+        const newStakePoolAmount = poolAmount - rewardTotal;
+        const amountWithDecimals = rewardTotal / powBigInt(10n, stakePoolDatum.decimals);
 
-        console.log("Pool Amount", poolAmount);
-        console.log("Stake Amount", stakeAmount);
-        console.log("Amount to lock", lockedTotal);
-        console.log("Reward", reward);
-        console.log("New Pool Amount", newStakePoolAmount);
+        const currentTime = lucid.utils.slotToUnixTime(lucid.currentSlot());
+        const lockTime = BigInt(currentTime) + stakeOrderDatum.ms_locked;
 
-        const currentTime = lucid.utils.slotToUnixTime(lucid.currentSlot() - 100); // Why -100? Because of the time it takes to create the transaction?
-        const locked_until = BigInt(currentTime) + BigInt(3_600_000) + BigInt(3_600_000) * stakeOrderDatum.days_locked;
-        const laterTime = BigInt(new Date(currentTime + 2 * 60 * 60 * 1000).getTime());
-        const asset_name = Data.to(laterTime) + fromText(stakePoolUtxo.outputIndex.toString()) + toHex(fromHex(stakePoolUtxo.txHash).slice(0, 17));
-        console.log(Data.to(laterTime));
-        console.log(fromText(stakePoolUtxo.outputIndex.toString()));
-        console.log(toHex(fromHex(stakePoolUtxo.txHash).slice(0, 17)));
-        const stake_key = stake_key_prefix + asset_name;
-        const reference = reference_prefix + asset_name;
-        console.log({ asset_name, stake_key, reference });
-        const timeLockDatum: TimeLockDatum = {
-            metadata: new Map([
-                [fromText("name"), fromText("Stake Key ") + fromText(abbreviatedAmount(lockedTotal, 0n)) + fromText(" ") + stakePoolDatum.asset_name + fromText(" - ") + fromText(timeToDatestring(locked_until))],
-                [fromText("image"), fromText("helloworld")],
-                [fromText("locked_amount"), fromText(lockedTotal.toString())],
-            ]),
-            version: 1n,
-            extra: {
-                lock_until: locked_until,
-                time_lock_key: stake_key,
-            }
-        };
-        const lockDatum: TimeLockMetadata = new Map([
-            [fromText("name"), fromText("test")]
+        const metadata_name = 
+            "Stake NFT " + 
+            abbreviatedAmount(amountWithDecimals, 0n) + " " + 
+            toText(stakePoolDatum.asset_name) + " - " + 
+            timeToDatestring(lockTime);
+
+        const timelockMetadata: TimeLockMetadata = new Map([
+            [fromText("name"), fromText(metadata_name)]
         ]);
-        console.log(timeToDatestring(1703851519000n));
-        console.log(abbreviatedAmount(lockedTotal, 0n), lockedTotal);
-        console.log(fromText("Stake Key ") + fromText(abbreviatedAmount(lockedTotal, 0n)) + fromText(" ") + stakePoolDatum.asset_name + fromText(" - ") + fromText(timeToDatestring(locked_until)));
-        console.log(fromText(BigInt(1010000).toString()));
-        console.log(Data.to(lockDatum, TimeLockMetadata));
-        console.log(Data.to(timeLockDatum, TimeLockDatum));
+
+        console.log("Stake NFT Asset Name", stakeNftAssetName, stakePoolUtxo.txHash, stakePoolUtxo.outputIndex);
+        console.log("Reward Total", rewardTotal);
+        console.log("Reward with decimals", amountWithDecimals);
+        console.log("Reward with decimals CBOR", Data.to(amountWithDecimals));
+        console.log("Stake Amount", stakeAmount);
+        console.log("Pool Amount", poolAmount);
+        console.log("Metadata Name", metadata_name, lockTime);
+        console.log("Timelock Metadata", Data.to(timelockMetadata, TimeLockMetadata));
+        /*
+          "Stake NFT ",
+            abbreviated_amount(amount, 0),
+            " ",
+            stake_pool_datum.asset_name,
+            " - ",
+            time_to_date_string(time_lock_datum.extra.lock_until),
+        */
         break;
+        // const reward = lockedTotal - stakeAmount;
+        // const newStakePoolAmount = poolAmount - reward;
+
+        // console.log("Pool Amount", poolAmount);
+        // console.log("Stake Amount", stakeAmount);
+        // console.log("Amount to lock", lockedTotal);
+        // console.log("Reward", reward);
+        // console.log("New Pool Amount", newStakePoolAmount);
+
+        // const currentTime = lucid.utils.slotToUnixTime(lucid.currentSlot() - 100); // Why -100? Because of the time it takes to create the transaction?
+        // const locked_until = BigInt(currentTime) + BigInt(3_600_000) + BigInt(3_600_000) /* * stakeOrderDatum.days_locked*/;
+        // const laterTime = BigInt(new Date(currentTime + 2 * 60 * 60 * 1000).getTime());
+        // const asset_name = Data.to(laterTime) + fromText(stakePoolUtxo.outputIndex.toString()) + toHex(fromHex(stakePoolUtxo.txHash).slice(0, 17));
+        // console.log(Data.to(laterTime));
+        // console.log(fromText(stakePoolUtxo.outputIndex.toString()));
+        // console.log(toHex(fromHex(stakePoolUtxo.txHash).slice(0, 17)));
+        // const stake_key = stake_key_prefix + asset_name;
+        // const reference = reference_prefix + asset_name;
+        // console.log({ asset_name, stake_key, reference });
+        // const timeLockDatum: TimeLockDatum = {
+        //     metadata: new Map([
+        //         [fromText("name"), fromText("Stake Key ") + fromText(abbreviatedAmount(lockedTotal, 0n)) + fromText(" ") + stakePoolDatum.asset_name + fromText(" - ") + fromText(timeToDatestring(locked_until))],
+        //         [fromText("image"), fromText("helloworld")],
+        //         [fromText("locked_amount"), fromText(lockedTotal.toString())],
+        //     ]),
+        //     version: 1n,
+        //     extra: {
+        //         lock_until: locked_until,
+        //         time_lock_key: stake_key,
+        //     }
+        // };
+        // const lockDatum: TimeLockMetadata = new Map([
+        //     [fromText("name"), fromText("test")]
+        // ]);
+        // console.log(timeToDatestring(1703851519000n));
+        // console.log(abbreviatedAmount(lockedTotal, 0n), lockedTotal);
+        // console.log(fromText("Stake Key ") + fromText(abbreviatedAmount(lockedTotal, 0n)) + fromText(" ") + stakePoolDatum.asset_name + fromText(" - ") + fromText(timeToDatestring(locked_until)));
+        // console.log(fromText(BigInt(1010000).toString()));
+        // console.log(Data.to(lockDatum, TimeLockMetadata));
+        // console.log(Data.to(timeLockDatum, TimeLockDatum));
+        // break;
         // const timeLockDatum = Data.to(
         //     {
         //         lock_until: locked_until,
@@ -493,6 +573,22 @@ if (Deno.args[0] === "--setup-collateral") {
     console.log("Setup collateral complete");
 }
 
+if (Deno.args[0] === "--mint-certificate") {
+
+    const tx = await lucid
+        .newTx()
+        .mintAssets({ [batchingSubject]: 1n })
+        .attachMintingPolicy(batchingCertificatePolicy)
+        .complete();
+
+    const signedTx = await tx.sign().complete();
+    const txHash = await signedTx.submit();
+    console.log(`Mint certificate ${txHash}, waiting for confirmation...`);
+    await lucid.provider.awaitTx(txHash);
+
+    console.log("Mint certificate complete");
+}
+
 if (Deno.args[0] === "--test") {
     console.log(walletAddressDetails.paymentCredential?.hash);
     const signature: MultisigScript = new Signature(walletAddressDetails.paymentCredential?.hash!);
@@ -531,8 +627,46 @@ if (Deno.args[0] === "--test") {
     console.log("Address with No Stake", Data.to(addressWithNoStake.toData()));
 
     const destination = new Destination(
-        addressWithStake,
+        addressWithNoStake,
         new NoDatum()
     );
     console.log("Destination", Data.to(destination.toData()));
+
+    const stakePoolProxyDatum: StakePoolProxyDatum = {
+        owner: new Signature("cb84310092f8c3dae1ebf0ac456114e487297d3fe684d3236588d5b3").toData(),
+        policy_id: cnctPolicyId,
+        asset_name: cnctAssetName,
+        nft_policy_id: stakingMintPolicyId,
+        ms_locked: 1000n,
+        reward_multiplier: new Rational(1n, 100n).toData(),
+        destination: new Destination(
+            new Address(
+                credential,
+                new StakeCredential(credential)
+            ),
+            new NoDatum()
+        ).toData()
+    };
+
+    console.log("Stake Pool Proxy Datum", Data.to(stakePoolProxyDatum, StakePoolProxyDatum));
+
+    const outputReference: OutputReference = {
+        transaction_id: {
+            hash: "9703ca4380baba442543f4cc941b060d7a6674f6daeebd692f6a453b74d9f83e"
+        },
+        output_index: 0n
+    };
+
+    console.log("Output Reference", Data.to(outputReference, OutputReference));
+
+    const stakeAmount = 100n;
+    const rewardPercent = new Rational(5n, 100n);
+    const rewardAmount = add_reward(stakeAmount, rewardPercent);
+    console.log("Reward Amount", rewardAmount);
+
+    const timelockMetadata: TimeLockMetadata = new Map([
+        [fromText("name"), fromText("Stake NFT 1K CNCT - 240123")]
+    ]); 
+
+    console.log("Timelock Metadata", Data.to(timelockMetadata, TimeLockMetadata));
 }

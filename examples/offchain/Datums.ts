@@ -58,6 +58,29 @@ export class Rational implements CborSerializable {
     public numerator = 0n;
     public denominator = 1n;
 
+    static fromInt(value: bigint): Rational {
+        return new Rational(value, 1n);
+    }
+
+    add(other: Rational): Rational {
+        if (this.denominator === other.denominator) {
+            return new Rational(this.numerator + other.numerator, this.denominator);
+        } else {
+            return new Rational(
+                this.numerator * other.denominator + other.numerator * this.denominator,
+                this.denominator * other.denominator
+            );
+        }
+    }
+
+    mul(other: Rational): Rational {
+        return new Rational(this.numerator * other.numerator, this.denominator * other.denominator);
+    }
+
+    floor(): bigint {
+        return this.numerator / this.denominator;
+    }
+
     toData = () => new Constr(0, [this.numerator, this.denominator]) as unknown as Data;
     fromData(data: Data) {
         if (data instanceof Constr) {
