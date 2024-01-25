@@ -24,4 +24,4 @@ requirements = []
 source = "github"
 
 [etags]
-"SundaeSwap-finance/aicone@main" = [{ secs_since_epoch = 1705954239, nanos_since_epoch = 501727000 }, "2bf1927e490547806fab94d01e5dfb65a8db56948c88f52cf2936400bc828264"]
+"SundaeSwap-finance/aicone@main" = [{ secs_since_epoch = 1706209077, nanos_since_epoch = 671021000 }, "2bf1927e490547806fab94d01e5dfb65a8db56948c88f52cf2936400bc828264"]
