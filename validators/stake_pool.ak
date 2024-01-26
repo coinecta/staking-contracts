@@ -205,14 +205,14 @@ test stake_pool_lock_funds() {
     }
 
   let current_time = 0
-  let later_time = 2 * hour_millis
+  let later_time = hour_millis
 
   let time_lock_datum =
     TimeLockDatum {
       metadata: dict.new(),
       version: 1,
       extra: LockDatum {
-        lock_until: current_time + hour_millis + 86_400_000,
+        lock_until: later_time + 86_400_000,
         time_lock_nft: #"00000000000000000000000000000000000000000000000000000011",
       },
     }
