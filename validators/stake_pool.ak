@@ -1,6 +1,6 @@
 use aiken/dict
 use aiken/interval.{Finite, Interval, IntervalBound}
-use aiken/list.{at}
+use aiken/list.{at, length}
 use aiken/math/rational
 use aiken/transaction.{
   InlineDatum, Input, NoDatum, Output, OutputReference, ScriptContext, Spend,
@@ -15,7 +15,8 @@ use staking_contracts/datums.{
   StakeProxyDatum, TimeLockDatum,
 }
 use staking_contracts/utils.{
-  add_reward, hour_millis, must_be_locked_until, must_have_exactly_one_output,
+  add_reward, filter_inputs_by_credential, hour_millis, must_be_locked_until,
+  must_have_exactly_one_output,
 }
 use sundae/multisig.{Signature, satisfied}
 
@@ -78,6 +79,15 @@ fn is_proper_locking_tx(
     ctx.transaction.inputs
       |> transaction.find_input(my_output_reference)
 
+  //Find amount of inputs with stake pool script, should be exactly 1
+  let exactly_one_stake_pool_input =
+    length(
+      filter_inputs_by_credential(
+        ctx.transaction.inputs,
+        self.output.address.payment_credential,
+      ),
+    ) == 1
+
   //We need to ensure the output of the tx has the same validator attached
   expect ScriptCredential(self_script) = self.output.address.payment_credential
   let self_outputs =
@@ -132,6 +142,7 @@ fn is_proper_locking_tx(
   let same_datum = InlineDatum(datum) == self_output.datum
 
   and {
+    exactly_one_stake_pool_input?,
     //Ensure exactly one stake pool output
     must_have_exactly_one_output(self_outputs)?,
     //Ensure exactly one time lock output
