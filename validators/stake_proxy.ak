@@ -1,7 +1,7 @@
 use aiken/bytearray.{drop, take}
 use aiken/dict
 use aiken/interval.{Finite, Interval, IntervalBound}
-use aiken/list.{find}
+use aiken/list.{find, length}
 use aiken/math/rational
 use aiken/transaction.{
   InlineDatum, Input, NoDatum, Output, OutputReference, ScriptContext, Spend,
@@ -18,8 +18,8 @@ use staking_contracts/datums.{
   TimeLockDatum, to_time_lock_datum,
 }
 use staking_contracts/utils.{
-  add_reward, hour_millis, must_be_locked_until, must_contain_asset,
-  must_have_exactly_one_output,
+  add_reward, filter_inputs_by_credential, hour_millis, must_be_locked_until,
+  must_contain_asset, must_have_exactly_one_output,
 }
 use sundae/multisig.{Signature, satisfied}
 
@@ -78,6 +78,16 @@ fn is_proper_locking_tx(
   expect Some(self) =
     ctx.transaction.inputs
       |> transaction.find_input(my_output_reference)
+
+  //Find amount of inputs with stake proxy script, should be exactly 1
+  let exactly_one_stake_proxy_input =
+    length(
+      filter_inputs_by_credential(
+        ctx.transaction.inputs,
+        self.output.address.payment_credential,
+      ),
+    ) == 1
+
   //Find the output locking the staked tokens + reward and extract its datum
   let time_lock_outputs =
     ctx.transaction.outputs
@@ -125,6 +135,7 @@ fn is_proper_locking_tx(
     locked_tokens == add_reward(staked_tokens, datum.reward_multiplier)
 
   and {
+    exactly_one_stake_proxy_input?,
     //Ensure only one time lock output to avoid unexpected results
     must_have_exactly_one_output(time_lock_outputs)?,
     correct_stake_nft_policy_id?,
