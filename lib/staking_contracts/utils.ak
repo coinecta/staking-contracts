@@ -1,19 +1,24 @@
 use aiken/bytearray.{drop, take}
 use aiken/dict
 use aiken/interval.{Finite}
-use aiken/list.{find, has, length}
+use aiken/list.{filter, find, has, length}
 use aiken/math
 use aiken/math/rational.{Rational}
 use aiken/option.{is_some}
 use aiken/string
 use aiken/time.{PosixTime}
-use aiken/transaction.{InlineDatum, Output, Transaction, ValidityRange}
+use aiken/transaction.{InlineDatum, Input, Output, Transaction, ValidityRange}
+use aiken/transaction/credential.{Credential}
 use aiken/transaction/value.{quantity_of}
 use staking_contracts/datums.{
   LockDatum, StakePoolDatum, TimeLockDatum, VerificationKeyHash,
   to_time_lock_datum,
 }
 use sundae/multisig.{Signature}
+
+pub fn filter_inputs_by_credential(inputs: List<Input>, cred: Credential) {
+  inputs |> filter(fn(i) { i.output.address.payment_credential == cred })
+}
 
 pub fn must_have_exactly_one_output(outputs: List<Output>) {
   length(outputs) == 1
@@ -58,19 +63,16 @@ pub fn must_be_locked_until(
   expect InlineDatum(time_lock_datum) = time_lock.datum
   let lock_expiration_time =
     to_time_lock_datum(time_lock_datum).extra.lock_until
+  expect Finite(upper_bound) = range.upper_bound.bound_type
+  expect Finite(lower_bound) = range.lower_bound.bound_type
+
+  let correct_lock_time = upper_bound + ms_to_be_locked
+
+  let is_locked_until_correct_time = lock_expiration_time == correct_lock_time
+  let range_less_than_buffer = upper_bound - lower_bound <= buffer
   and {
-    //This ensures for the user that the assets are not locked longer than expected
-    when range.lower_bound.bound_type is {
-      Finite(tx_earliest_time) ->
-        tx_earliest_time + ms_to_be_locked + buffer >= lock_expiration_time
-      _ -> False
-    }?,
-    //This ensures assets are locked for at least the required amount as configured in the stake pool
-    when range.upper_bound.bound_type is {
-      Finite(tx_latest_time) ->
-        tx_latest_time + ms_to_be_locked - buffer <= lock_expiration_time
-      _ -> False
-    }?,
+    is_locked_until_correct_time?,
+    range_less_than_buffer?,
   }
 }
 
