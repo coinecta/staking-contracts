@@ -1,19 +1,24 @@
 use aiken/bytearray.{drop, take}
 use aiken/dict
 use aiken/interval.{Finite}
-use aiken/list.{find, has, length}
+use aiken/list.{filter, find, has, length}
 use aiken/math
 use aiken/math/rational.{Rational}
 use aiken/option.{is_some}
 use aiken/string
 use aiken/time.{PosixTime}
-use aiken/transaction.{InlineDatum, Output, Transaction, ValidityRange}
+use aiken/transaction.{InlineDatum, Input, Output, Transaction, ValidityRange}
+use aiken/transaction/credential.{Credential}
 use aiken/transaction/value.{quantity_of}
 use staking_contracts/datums.{
   LockDatum, StakePoolDatum, TimeLockDatum, VerificationKeyHash,
   to_time_lock_datum,
 }
 use sundae/multisig.{Signature}
+
+pub fn filter_inputs_by_credential(inputs: List<Input>, cred: Credential) {
+  inputs |> filter(fn(i) { i.output.address.payment_credential == cred })
+}
 
 pub fn must_have_exactly_one_output(outputs: List<Output>) {
   length(outputs) == 1
