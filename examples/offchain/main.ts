@@ -365,8 +365,8 @@ if (Deno.args[0] === "--execute-stake") {
         console.log("Valid Stake Pool UTXOs: ", validStakePoolUtxos);
 
         if (validStakePoolUtxos.length === 0 || validStakeProxyUtxos.length === 0) {
-            console.log("No valid stake pool or stake proxy UTXOs found, waiting for 10 seconds...");
-            await new Promise((resolve) => setTimeout(resolve, 10000));
+            console.log("No valid stake pool or stake proxy UTXOs found, waiting for 20 seconds...");
+            await new Promise((resolve) => setTimeout(resolve, 20000));
             continue;
         }
 
@@ -388,10 +388,12 @@ if (Deno.args[0] === "--execute-stake") {
         const rewardTotal = add_reward(stakeAmount, rewardMultiplier);
         const newStakePoolAmount = poolAmount - (rewardTotal - stakeAmount);
         const amountWithDecimals = rewardTotal / powBigInt(10n, stakePoolDatum.decimals);
-
-        const currentTime = floorToSecond(lucid.utils.slotToUnixTime(lucid.currentSlot()) - 100);
-        const validTime = BigInt(floorToSecond(currentTime + (1000 * 60 * 1))); // Add one minute to tx validity
+        
+        const currentSlot = lucid.currentSlot() - 100; // Subtract 100 slots to account for latency around 5 minutes and for some reason lucid returns a slot that is in the future
+        const currentTime = floorToSecond(lucid.utils.slotToUnixTime(currentSlot));
+        const validTime = BigInt(floorToSecond(currentTime + (1000 * 60 * 7))); // Add seven minutes to upper bound of tx validity
         const lockTime = validTime + stakeOrderDatum.ms_locked;
+        console.log("Current Slot", currentSlot);
         console.log("Current Time", currentTime);
         console.log("Valid Time", validTime);
         console.log("Lock Time", lockTime);
@@ -459,8 +461,8 @@ if (Deno.args[0] === "--execute-stake") {
         const txHash = await signedTx.submit();
         console.log(`Execute stake ${txHash}, waiting for confirmation...`);
         await lucid.provider.awaitTx(txHash);
-        console.log("Execute stake complete, waiting for 10 seconds...");
-        await new Promise((resolve) => setTimeout(resolve, 10000));
+        console.log("Execute stake complete, waiting for 40 seconds...");
+        await new Promise((resolve) => setTimeout(resolve, 40000));
     }
 }
 
