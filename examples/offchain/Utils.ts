@@ -65,3 +65,7 @@ export function powBigInt(base: bigint, exponent: bigint): bigint {
     }
     return result;
 }
+
+export function floorToSecond(time: number): number {
+    return Math.floor(time / 1000) * 1000;
+}

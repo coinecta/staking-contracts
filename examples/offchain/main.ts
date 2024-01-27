@@ -3,7 +3,7 @@ const { hash_blake2b256 } = C;
 import { config } from "https://deno.land/x/dotenv@v3.2.2/mod.ts";
 import stakingValidatorsBP from "../../plutus.json" with { type: "json" };
 import { Signature, Rational, MultisigScript, DataConvert, Credential, Address, StakeCredential, Destination, NoDatum } from "./Datums.ts";
-import { abbreviatedAmount, add_reward, powBigInt, timeToDatestring } from "./Utils.ts";
+import { abbreviatedAmount, add_reward, floorToSecond, powBigInt, timeToDatestring } from "./Utils.ts";
 
 const env = config();
 
@@ -389,9 +389,11 @@ if (Deno.args[0] === "--execute-stake") {
         const newStakePoolAmount = poolAmount - (rewardTotal - stakeAmount);
         const amountWithDecimals = rewardTotal / powBigInt(10n, stakePoolDatum.decimals);
 
-        const currentTime = lucid.utils.slotToUnixTime(lucid.currentSlot()) - 100;
-        const lockTime = BigInt(currentTime) + stakeOrderDatum.ms_locked;
+        const currentTime = floorToSecond(lucid.utils.slotToUnixTime(lucid.currentSlot()) - 100);
+        const validTime = BigInt(floorToSecond(currentTime + (1000 * 60 * 1))); // Add one minute to tx validity
+        const lockTime = validTime + stakeOrderDatum.ms_locked;
         console.log("Current Time", currentTime);
+        console.log("Valid Time", validTime);
         console.log("Lock Time", lockTime);
 
         const metadata_name =
@@ -418,7 +420,7 @@ if (Deno.args[0] === "--execute-stake") {
         const tx = await bLucid
             .newTx()
             .validFrom(currentTime)
-            .validTo(parseInt((lockTime + 3_600_000n).toString()))
+            .validTo(parseInt((validTime).toString()))
             .collectFrom([stakePoolUtxo], Data.to({ reward_index: 0n }, StakePoolRedeemer))
             .collectFrom([stakeProxyUtxo], Data.void())
             .mintAssets({
@@ -450,14 +452,15 @@ if (Deno.args[0] === "--execute-stake") {
             .attachSpendingValidator(stakingProxyValidatorScript)
             .attachMintingPolicy(stakingMintPolicy)
             .complete({
-                nativeUplc: false
+                nativeUplc: true
             });
         
         const signedTx = await tx.sign().complete();
         const txHash = await signedTx.submit();
         console.log(`Execute stake ${txHash}, waiting for confirmation...`);
         await lucid.provider.awaitTx(txHash);
-        console.log("Execute stake complete");
+        console.log("Execute stake complete, waiting for 10 seconds...");
+        await new Promise((resolve) => setTimeout(resolve, 10000));
     }
 }
 
