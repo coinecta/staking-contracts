@@ -136,6 +136,12 @@ fn lock_transaction(
       //Make sure the asset name is as expected
       let correct_reference_name = asset_name == proper_asset_name
 
+      let correct_stake_nft_set =
+        time_lock_datum.extra.time_lock_nft == bytearray.concat(
+          own_policy,
+          stake_nft.2nd,
+        )
+
       //Only allow mint of 2 assets (reference and stake nft)
       let no_extra_mint = list.length(minted) == 2
 
@@ -154,6 +160,7 @@ fn lock_transaction(
       let correct_time_lock = time_lock_hash == time_lock_cred
 
       and {
+        correct_stake_nft_set?,
         correct_stake_nft_name?,
         correct_reference_name?,
         no_extra_mint?,
@@ -346,7 +353,10 @@ test lock_transaction_lock() {
       version: 1,
       extra: LockDatum {
         lock_until: current_time + hour_millis + 86_400_000,
-        time_lock_nft: #"00000000000000000000000000000000000000000000000000000011",
+        time_lock_nft: bytearray.concat(
+          #"00000000000000000000000000000000000000000000000000000011",
+          stake_nft,
+        ),
       },
     }
 

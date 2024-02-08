@@ -1,3 +1,4 @@
+use aiken/bytearray
 use aiken/dict
 use aiken/interval.{Finite, Interval, IntervalBound}
 use aiken/list.{at, length}
@@ -9,10 +10,10 @@ use aiken/transaction.{
 use aiken/transaction/credential.{
   Address, ScriptCredential, VerificationKeyCredential,
 }
-use aiken/transaction/value.{add, from_lovelace}
+use aiken/transaction/value.{add, from_lovelace, to_minted_value, zero}
 use staking_contracts/datums.{
   Destination, LockDatum, RewardSetting, StakePoolDatum, StakePoolRedeemer,
-  StakeProxyDatum, TimeLockDatum,
+  StakeProxyDatum, TimeLockDatum, to_time_lock_datum,
 }
 use staking_contracts/utils.{
   add_reward, filter_inputs_by_credential, hour_millis, must_be_locked_until,
@@ -101,6 +102,10 @@ fn is_proper_locking_tx(
       |> transaction.find_script_outputs(time_lock_hash)
   expect Some(time_lock) = time_lock_outputs |> at(0)
 
+  expect InlineDatum(time_lock_data) = time_lock.datum
+
+  let time_lock_datum = to_time_lock_datum(time_lock_data)
+
   //We use the reward setting as indicated by the submitter of the transaction
   expect Some(reward_setting) =
     datum.reward_settings |> at(redeemer.reward_index)
@@ -141,7 +146,15 @@ fn is_proper_locking_tx(
   //Make sure settings have not been altered
   let same_datum = InlineDatum(datum) == self_output.datum
 
+  let one_stake_nft_minted =
+    1 == value.quantity_of(
+      value.from_minted_value(ctx.transaction.mint),
+      bytearray.take(time_lock_datum.extra.time_lock_nft, 28),
+      bytearray.drop(time_lock_datum.extra.time_lock_nft, 28),
+    )
+
   and {
+    one_stake_nft_minted?,
     exactly_one_stake_pool_input?,
     //Ensure exactly one stake pool output
     must_have_exactly_one_output(self_outputs)?,
@@ -213,7 +226,7 @@ test stake_pool_lock_funds() {
       version: 1,
       extra: LockDatum {
         lock_until: later_time + 86_400_000,
-        time_lock_nft: #"00000000000000000000000000000000000000000000000000000011",
+        time_lock_nft: #"00000000000000000000000000000000000000000000000000000011000000000000",
       },
     }
   let time_lock_data: Data = time_lock_datum
@@ -306,6 +319,13 @@ test stake_pool_lock_funds() {
                ..transaction,
                inputs: [stake_pool_input, stake_proxy_input],
                outputs: [new_stake_pool_output, time_lock_output],
+               mint: zero()
+                 |> add(
+                      #"00000000000000000000000000000000000000000000000000000011",
+                      #"000000000000",
+                      1,
+                    )
+                 |> to_minted_value(),
                validity_range: Interval {
                  lower_bound: IntervalBound {
                    bound_type: Finite(current_time),
