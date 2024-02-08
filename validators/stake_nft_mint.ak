@@ -105,6 +105,9 @@ fn lock_transaction(
         time_lock_output.value
           |> quantity_of(stake_pool_datum.policy_id, stake_pool_datum.asset_name)
 
+      let reference_nft_in_time_lock =
+        1 == quantity_of(time_lock_output.value, own_policy, reference_nft.2nd)
+
       //Amount with decimals, this is only to be used in metadata for the stake nft
       let amount = raw_amount / math.pow(10, stake_pool_datum.decimals)
 
@@ -138,9 +141,6 @@ fn lock_transaction(
           stake_nft.2nd,
         )
 
-      //Only allow mint of 2 assets (reference and stake nft)
-      let no_extra_mint = list.length(minted) == 2
-
       //Ensure the metadata token name is as expected
       let correct_meta_name =
         dict.get(time_lock_datum.metadata, "name") == Some(proper_meta_name)
@@ -156,10 +156,10 @@ fn lock_transaction(
       let correct_time_lock = time_lock_hash == time_lock_cred
 
       and {
+        reference_nft_in_time_lock?,
         correct_stake_nft_set?,
         correct_stake_nft_name?,
         correct_reference_name?,
-        no_extra_mint?,
         correct_meta_name?,
         correct_meta_amount?,
         correct_stake_pool?,
