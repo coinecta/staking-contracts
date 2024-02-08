@@ -32,11 +32,7 @@ type StakeNFTMintRedeemer {
 }
 
 validator(time_lock_hash: ByteArray, stake_pool_hash: ByteArray) {
-  fn stake_nft_mint(
-    _datum: Void,
-    redeemer: StakeNFTMintRedeemer,
-    ctx: ScriptContext,
-  ) {
+  fn stake_nft_mint(redeemer: StakeNFTMintRedeemer, ctx: ScriptContext) {
     if redeemer.mint {
       lock_transaction(redeemer, ctx, stake_pool_hash, time_lock_hash)?
     } else {
