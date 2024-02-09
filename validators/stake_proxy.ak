@@ -1,7 +1,7 @@
 use aiken/bytearray.{drop, take}
 use aiken/dict
 use aiken/interval.{Finite, Interval, IntervalBound}
-use aiken/list.{find, length}
+use aiken/list.{length}
 use aiken/math/rational
 use aiken/transaction.{
   InlineDatum, Input, NoDatum, Output, OutputReference, ScriptContext, Spend,
@@ -96,6 +96,10 @@ fn is_proper_locking_tx(
   expect InlineDatum(time_lock_output_datum) = time_lock_output.datum
   let time_lock_datum = to_time_lock_datum(time_lock_output_datum)
 
+  //Time lock should have lovelace, staked asset + reference nft
+  expect list.length(value.flatten(time_lock_output.value)) == 3
+  //Time lock should have at least 2 ADA
+  expect value.lovelace_of(time_lock_output.value) >= 2_000_000
   //We assume all assets matching the policy_id+asset_name are to be staked
   let staked_tokens =
     self.output.value
@@ -121,15 +125,43 @@ fn is_proper_locking_tx(
   let correct_nft_minted =
     quantity_of(minted, minted_policy_id, minted_asset_name) == 1
 
-  //Make sure the nft is minted into the users' wallet
-  expect Some(_nft_minted_to_user) =
+  //There should be 1 destination output
+  expect [destination_output] =
     ctx.transaction.outputs
-      |> find(
+      |> list.filter(
            fn(o) {
-             quantity_of(o.value, minted_policy_id, minted_asset_name) == 1 && o.address == datum.destination.address && o.datum == datum.destination.datum
+             o.address == datum.destination.address && o.datum == datum.destination.datum
            },
          )
+  let lovelace_cost =
+    value.lovelace_of(self.output.value) - (
+      value.lovelace_of(time_lock_output.value) + value.lovelace_of(
+        destination_output.value,
+      )
+    )
 
+  expect lovelace_cost <= 2_000_000
+  //The value of the proxy input should match the value of time_lock+destination
+  //taking the lovelace cost (tx fee + sequencer fee) and reward and minted nft's into account
+  let combined_user_value =
+    time_lock_output.value
+      |> value.merge(destination_output.value)
+      |> value.merge(value.from_lovelace(lovelace_cost))
+      |> value.merge(value.negate(value.from_minted_value(ctx.transaction.mint)))
+      |> value.merge(value.negate(self.output.value))
+      |> value.merge(
+           value.negate(
+             value.from_asset(
+               datum.policy_id,
+               datum.asset_name,
+               locked_tokens - staked_tokens,
+             ),
+           ),
+         )
+
+  expect combined_user_value == value.zero()
+  expect
+    quantity_of(destination_output.value, minted_policy_id, minted_asset_name) == 1
   //Ensure locked tokens is staked + reward
   let correct_locked_tokens =
     locked_tokens == add_reward(staked_tokens, datum.reward_multiplier)
@@ -260,7 +292,7 @@ test stake_proxy_lock_funds() {
         payment_credential: ScriptCredential(stake_proxy_hash),
         stake_credential: None,
       },
-      value: from_lovelace(2000000)
+      value: from_lovelace(4_000_000)
         |> add(
              #"00000000000000000000000000000000000000000000000000000000",
              #"000000000000",
@@ -309,6 +341,11 @@ test stake_proxy_lock_funds() {
              #"00000000000000000000000000000000000000000000000000000000",
              #"000000000000",
              1_010_000,
+           )
+        |> add(
+             #"00000000000000000000000000000000000000000000000000000011",
+             #"00000000",
+             1,
            ),
       datum: InlineDatum(time_lock_data),
       reference_script: None,
@@ -329,6 +366,7 @@ test stake_proxy_lock_funds() {
                ],
                mint: zero()
                  |> add(stake_proxy_datum.nft_policy_id, #"", 1)
+                 |> add(stake_proxy_datum.nft_policy_id, #"00000000", 1)
                  |> to_minted_value(),
                validity_range: Interval {
                  lower_bound: IntervalBound {
