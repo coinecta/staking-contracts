@@ -80,17 +80,19 @@ fn is_proper_locking_tx(
     ctx.transaction.inputs
       |> transaction.find_input(my_output_reference)
 
+  let self_input = self.output
+
   //Find amount of inputs with stake pool script, should be exactly 1
   let exactly_one_stake_pool_input =
     length(
       filter_inputs_by_credential(
         ctx.transaction.inputs,
-        self.output.address.payment_credential,
+        self_input.address.payment_credential,
       ),
     ) == 1
 
   //We need to ensure the output of the tx has the same validator attached
-  expect ScriptCredential(self_script) = self.output.address.payment_credential
+  expect ScriptCredential(self_script) = self_input.address.payment_credential
   let self_outputs =
     ctx.transaction.outputs
       |> transaction.find_script_outputs(self_script)
@@ -111,7 +113,7 @@ fn is_proper_locking_tx(
     datum.reward_settings |> at(redeemer.reward_index)
   //Find out current stake_pool token quantity
   let stake_pool_size =
-    self.output.value
+    self_input.value
       |> value.quantity_of(datum.policy_id, datum.asset_name)
 
   //Find stake_pool token quantity in output
@@ -136,13 +138,16 @@ fn is_proper_locking_tx(
 
   //Make sure no other assets have been altered in the stake pool output compared to the input
   let correct_output_value =
-    self.output.value == add(
-      self_output.value,
+    value.without_lovelace(self_input.value) == add(
+      value.without_lovelace(self_output.value),
       datum.policy_id,
       datum.asset_name,
       reward,
     )
 
+  //Allow higher lovelace amount to support increase of minutxo
+  expect
+    value.lovelace_of(self_input.value) <= value.lovelace_of(self_output.value)
   //Make sure settings have not been altered
   let same_datum = InlineDatum(datum) == self_output.datum
 
