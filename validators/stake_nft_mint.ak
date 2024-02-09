@@ -4,7 +4,6 @@ use aiken/dict
 use aiken/hash.{blake2b_256}
 use aiken/interval.{Finite, Interval, IntervalBound}
 use aiken/list.{at, filter, find}
-use aiken/math
 use aiken/math/rational
 use aiken/string
 use aiken/transaction.{
@@ -20,9 +19,7 @@ use staking_contracts/datums.{
   LockDatum, RewardSetting, StakePoolDatum, TimeLockDatum, reference_prefix,
   stake_nft_prefix, to_stake_pool_datum, to_time_lock_datum,
 }
-use staking_contracts/utils.{
-  abbreviated_amount, hour_millis, must_start_after, time_to_date_string,
-}
+use staking_contracts/utils.{hour_millis, must_start_after, time_to_date_string}
 use sundae/multisig.{Signature}
 
 type StakeNFTMintRedeemer {
@@ -108,9 +105,6 @@ fn lock_transaction(
       let reference_nft_in_time_lock =
         1 == quantity_of(time_lock_output.value, own_policy, reference_nft.2nd)
 
-      //Amount with decimals, this is only to be used in metadata for the stake nft
-      let amount = raw_amount / math.pow(10, stake_pool_datum.decimals)
-
       //Construct the proper asset name using the unique components
       let proper_asset_name =
         blake2b_256(serialise(stake_pool_input.output_reference))
@@ -121,8 +115,6 @@ fn lock_transaction(
         list.foldl(
           [
             "Stake NFT ",
-            abbreviated_amount(amount, 0),
-            " ",
             stake_pool_datum.asset_name,
             " - ",
             time_to_date_string(time_lock_datum.extra.lock_until),
@@ -146,9 +138,25 @@ fn lock_transaction(
         dict.get(time_lock_datum.metadata, "name") == Some(proper_meta_name)
 
       //Make sure an extra field is present in the metadata showing the tokens locked by the nft
+      let proper_meta_amount =
+        list.foldl(
+          [
+            "[",
+            "(",
+            bytearray.from_string(bytearray.to_hex(stake_pool_datum.policy_id)),
+            ",",
+            bytearray.from_string(bytearray.to_hex(stake_pool_datum.asset_name)),
+            ",",
+            bytearray.from_string(string.from_int(raw_amount)),
+            ")",
+            "]",
+          ],
+          "",
+          fn(el, sum) { bytearray.concat(sum, el) },
+        )
       let correct_meta_amount =
-        dict.get(time_lock_datum.metadata, "locked_amount") == Some(
-          bytearray.from_string(string.from_int(amount)),
+        dict.get(time_lock_datum.metadata, "locked_assets") == Some(
+          proper_meta_amount,
         )
 
       //Verify script hashes
@@ -277,7 +285,6 @@ test lock_transaction_lock() {
       owner: Signature(
         #"00000000000000000000000000000000000000000000000000000000",
       ),
-      decimals: 0,
       policy_id: #"00000000000000000000000000000000000000000000000000000000",
       asset_name: #"000000000000",
       reward_settings: [
@@ -322,8 +329,6 @@ test lock_transaction_lock() {
     list.foldl(
       [
         "Stake NFT ",
-        abbreviated_amount(1_010_000, 0),
-        " ",
         #"000000000000",
         " - ",
         time_to_date_string(current_time + hour_millis + 86_400_000),
@@ -342,8 +347,26 @@ test lock_transaction_lock() {
              bytearray.compare,
            )
         |> dict.insert(
-             "locked_amount",
-             bytearray.from_string(string.from_int(1_010_000)),
+             "locked_assets",
+             list.foldl(
+               [
+                 "[",
+                 "(",
+                 bytearray.from_string(
+                   bytearray.to_hex(stake_pool_datum.policy_id),
+                 ),
+                 ",",
+                 bytearray.from_string(
+                   bytearray.to_hex(stake_pool_datum.asset_name),
+                 ),
+                 ",",
+                 bytearray.from_string(string.from_int(1_010_000)),
+                 ")",
+                 "]",
+               ],
+               "",
+               fn(el, sum) { bytearray.concat(sum, el) },
+             ),
              bytearray.compare,
            ),
       version: 1,

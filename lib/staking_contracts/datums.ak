@@ -51,8 +51,6 @@ pub type StakePoolDatum {
   asset_name: AssetName,
   //Owner script that is allowed to change settings on the pool or remove unused assets
   owner: MultisigScript,
-  //Decimals for the asset in the stake pool (used for showing staked amount in stake nft)
-  decimals: Int,
 }
 
 pub type StakePoolRedeemer {
@@ -106,7 +104,6 @@ test must_cast_to_stake_pool_datum() {
       policy_id: #"",
       asset_name: #"",
       owner: Signature(#""),
-      decimals: 0,
     }
   let stake_pool_data: Data = stake_pool_datum
   stake_pool_datum == to_stake_pool_datum(stake_pool_data)

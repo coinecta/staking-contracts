@@ -2,7 +2,6 @@ use aiken/bytearray.{drop, take}
 use aiken/dict
 use aiken/interval.{Finite}
 use aiken/list.{filter, find, has, length}
-use aiken/math
 use aiken/math/rational.{Rational}
 use aiken/option.{is_some}
 use aiken/string
@@ -84,36 +83,6 @@ pub fn must_start_after(range: ValidityRange, lock_expiration_time: PosixTime) {
   }?
 }
 
-//Abbreviates an amount to make it more readable to the user
-pub fn abbreviated_amount(amount: Int, decimals: Int) -> ByteArray {
-  let amount_dec = amount / math.pow(10, decimals)
-  let quadrillions = amount_dec / 1_000_000_000_000
-  if quadrillions > 0 {
-    if quadrillions > 999 {
-      "***Q"
-    } else {
-      bytearray.from_string(string.concat(string.from_int(quadrillions), @"Q"))
-    }
-  } else {
-    let billions = amount_dec / 1_000_000_000
-    if billions > 0 {
-      bytearray.from_string(string.concat(string.from_int(billions), @"B"))
-    } else {
-      let millions = amount_dec / 1_000_000
-      if millions > 0 {
-        bytearray.from_string(string.concat(string.from_int(millions), @"M"))
-      } else {
-        let thousands = amount_dec / 1_000
-        if thousands > 0 {
-          bytearray.from_string(string.concat(string.from_int(thousands), @"K"))
-        } else {
-          bytearray.from_string(string.from_int(amount_dec))
-        }
-      }
-    }
-  }
-}
-
 //Produces a date string in the format YYYYMMDD
 //Taken from https://stackoverflow.com/questions/7136385/calculate-day-number-from-an-unix-timestamp-in-a-math-way
 pub fn time_to_date_string(time: PosixTime) -> ByteArray {
@@ -178,48 +147,6 @@ test time_to_date_string_correct_day_less_than_10_date() {
   time_to_date_string(1706875519000) == "240202"
 }
 
-test abbreviated_amount_0_point_666_tokens_abreviates_to_0() {
-  let amount = 666_666_666_666
-  let decimals = 12
-  abbreviated_amount(amount, decimals) == "0"
-}
-
-test abbreviated_amount_666_tokens_abreviates_to_666() {
-  let amount = 666_666_666_666
-  let decimals = 9
-  abbreviated_amount(amount, decimals) == "666"
-}
-
-test abbreviated_amount_666_thousand_tokens_abreviates_to_666K() {
-  let amount = 666_666_666_666
-  let decimals = 6
-  abbreviated_amount(amount, decimals) == "666K"
-}
-
-test abbreviated_amount_666_million_tokens_abreviates_to_666M() {
-  let amount = 666_666_666_666
-  let decimals = 3
-  abbreviated_amount(amount, decimals) == "666M"
-}
-
-test abbreviated_amount_666_billion_tokens_abreviates_to_666B() {
-  let amount = 666_666_666_666_000
-  let decimals = 3
-  abbreviated_amount(amount, decimals) == "666B"
-}
-
-test abbreviated_amount_666_quadrillion_tokens_abreviates_to_666Q() {
-  let amount = 666_666_666_666_000_000
-  let decimals = 3
-  abbreviated_amount(amount, decimals) == "666Q"
-}
-
-test abbreviated_amount_ridiculous_amount_should_be_3starQ() {
-  let amount = 666_666_666_666_000_000
-  let decimals = 0
-  abbreviated_amount(amount, decimals) == "***Q"
-}
-
 test must_have_same_datum_succeed_when_same_datum() {
   let time_lock_datum_1 =
     TimeLockDatum {
@@ -261,7 +188,6 @@ test must_have_same_datum_fail_when_different_datum_type() {
     }
   let stake_pool_datum =
     StakePoolDatum {
-      decimals: 0,
       reward_settings: [],
       policy_id: #"",
       asset_name: #"",
