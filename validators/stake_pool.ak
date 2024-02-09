@@ -98,6 +98,7 @@ fn is_proper_locking_tx(
       |> transaction.find_script_outputs(self_script)
   expect Some(self_output) = self_outputs |> at(0)
 
+  expect self_input.address == self_output.address
   //The output needs to include a utxo with time lock validator
   let time_lock_outputs =
     ctx.transaction.outputs
