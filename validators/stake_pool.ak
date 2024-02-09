@@ -188,7 +188,6 @@ test stake_pool_lock_funds() {
       owner: Signature(
         #"00000000000000000000000000000000000000000000000000000000",
       ),
-      decimals: 0,
       policy_id: #"00000000000000000000000000000000000000000000000000000000",
       asset_name: #"000000000000",
       reward_settings: [
