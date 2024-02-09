@@ -33,6 +33,7 @@ pub fn must_be_signed_by(transaction: Transaction, vk: VerificationKeyHash) {
 }
 
 pub fn add_reward(amount: Int, reward: Rational) -> Int {
+  expect Less != rational.compare(reward, rational.zero())
   rational.floor(
     rational.mul(
       rational.from_int(amount),
