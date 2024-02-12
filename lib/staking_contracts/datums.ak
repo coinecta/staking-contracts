@@ -78,6 +78,10 @@ pub type StakeProxyDatum {
   policy_id: PolicyId,
   //Asset name of the asset the user wants to stake
   asset_name: AssetName,
+  //Amount of assets to stake
+  asset_amount: Int,
+  //Lovelace amount to put in timelock
+  lovelace_amount: Int,
   //Policy id the user expects the stake nft to be minted with
   nft_policy_id: PolicyId,
 }

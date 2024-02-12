@@ -219,6 +219,8 @@ test stake_pool_lock_funds() {
       reward_multiplier: reward,
       policy_id: #"00000000000000000000000000000000000000000000000000000000",
       asset_name: #"000000000000",
+      asset_amount: 1_000_000,
+      lovelace_amount: 2_000_000,
       nft_policy_id: #"00000000000000000000000000000000000000000000000000000011",
     }
 

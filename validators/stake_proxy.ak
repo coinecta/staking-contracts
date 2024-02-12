@@ -99,11 +99,9 @@ fn is_proper_locking_tx(
   //Time lock should have lovelace, staked asset + reference nft
   expect list.length(value.flatten(time_lock_output.value)) == 3
   //Time lock should have at least 2 ADA
-  expect value.lovelace_of(time_lock_output.value) >= 2_000_000
+  expect value.lovelace_of(time_lock_output.value) == datum.lovelace_amount
   //We assume all assets matching the policy_id+asset_name are to be staked
-  let staked_tokens =
-    self.output.value
-      |> quantity_of(datum.policy_id, datum.asset_name)
+  let staked_tokens = datum.asset_amount
 
   //The amount of tokens locked, should be staked + reward
   let locked_tokens =
@@ -140,7 +138,7 @@ fn is_proper_locking_tx(
       )
     )
 
-  expect lovelace_cost <= 2_000_000
+  expect lovelace_cost == 2_000_000
   //The value of the proxy input should match the value of time_lock+destination
   //taking the lovelace cost (tx fee + sequencer fee) and reward and minted nft's into account
   let combined_user_value =
@@ -227,6 +225,8 @@ test stake_proxy_lock_funds() {
       reward_multiplier: reward,
       policy_id: #"00000000000000000000000000000000000000000000000000000000",
       asset_name: #"000000000000",
+      asset_amount: 1_000_000,
+      lovelace_amount: 2_000_000,
       nft_policy_id: #"00000000000000000000000000000000000000000000000000000011",
     }
 
@@ -291,7 +291,7 @@ test stake_proxy_lock_funds() {
         payment_credential: ScriptCredential(stake_proxy_hash),
         stake_credential: None,
       },
-      value: from_lovelace(4_000_000)
+      value: from_lovelace(6_000_000)
         |> add(
              #"00000000000000000000000000000000000000000000000000000000",
              #"000000000000",
@@ -321,7 +321,7 @@ test stake_proxy_lock_funds() {
   let user_output =
     Output {
       address: stake_proxy_datum.destination.address,
-      value: from_lovelace(100000)
+      value: from_lovelace(2_000_000)
         |> add(stake_proxy_datum.nft_policy_id, #"", 1),
       reference_script: None,
       datum: stake_proxy_datum.destination.datum,
