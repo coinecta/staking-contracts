@@ -22,26 +22,15 @@ use staking_contracts/datums.{
 use staking_contracts/utils.{hour_millis, must_start_after, time_to_date_string}
 use sundae/multisig.{Signature}
 
-type StakeNFTMintRedeemer {
+pub type StakeNFTMintRedeemer {
   stake_pool_index: Int,
   time_lock_index: Int,
   mint: Bool,
 }
 
-validator(time_lock_hash: ByteArray, stake_pool_hash: ByteArray) {
-  fn stake_nft_mint(redeemer: StakeNFTMintRedeemer, ctx: ScriptContext) {
-    if redeemer.mint {
-      lock_transaction(redeemer, ctx, stake_pool_hash, time_lock_hash)?
-    } else {
-      unlock_transaction(ctx, time_lock_hash)?
-    }
-  }
-}
-
-fn lock_transaction(
+pub fn mint_transaction(
   redeemer: StakeNFTMintRedeemer,
   ctx: ScriptContext,
-  stake_pool_hash: ByteArray,
   time_lock_hash: ByteArray,
 ) -> Bool {
   when ctx.purpose is {
@@ -160,7 +149,7 @@ fn lock_transaction(
         )
 
       //Verify script hashes
-      let correct_stake_pool = stake_pool_hash == stake_pool_cred
+      let correct_stake_pool = own_policy == stake_pool_cred
       let correct_time_lock = time_lock_hash == time_lock_cred
 
       and {
@@ -178,7 +167,7 @@ fn lock_transaction(
   }
 }
 
-fn unlock_transaction(ctx: ScriptContext, time_lock_hash: ByteArray) -> Bool {
+pub fn burn_transaction(ctx: ScriptContext, time_lock_hash: ByteArray) -> Bool {
   when ctx.purpose is {
     Mint(own_policy) -> {
       //Retrieve all minted assets into an array
@@ -269,14 +258,14 @@ fn unlock_transaction(ctx: ScriptContext, time_lock_hash: ByteArray) -> Bool {
   }
 }
 
-test lock_transaction_lock() {
+test mint_transaction_lock() {
   let current_time = 0
 
   let time_lock_hash =
     #"550cc5a9682bcbbe5583f1006624000032b4d8f4ddd6f37623462ff9"
 
   let stake_pool_hash =
-    #"7a8a80f13e296da14c3c4e379e1c270ffabb2740a28e983acf75275f"
+    #"00000000000000000000000000000000000000000000000000000011"
 
   expect Some(reward) = rational.new(1, 100)
 
@@ -290,6 +279,7 @@ test lock_transaction_lock() {
       reward_settings: [
         RewardSetting { ms_locked: 86_400_000, reward_multiplier: reward },
       ],
+      open_time: 0,
     }
   let stake_pool_output_reference =
     OutputReference {
@@ -437,15 +427,10 @@ test lock_transaction_lock() {
              }
            },
     }
-  lock_transaction(
-    stake_nft_mint_redeemer,
-    context,
-    stake_pool_hash,
-    time_lock_hash,
-  )
+  mint_transaction(stake_nft_mint_redeemer, context, time_lock_hash)
 }
 
-test unlock_transaction_single_unlock() {
+test burn_transaction_single_unlock() {
   let current_time = 2 * 86_400_000
 
   let time_lock_hash =
@@ -542,10 +527,10 @@ test unlock_transaction_single_unlock() {
            },
     }
 
-  unlock_transaction(context, time_lock_hash)
+  burn_transaction(context, time_lock_hash)
 }
 
-test unlock_transaction_multi_unlock() {
+test burn_transaction_multi_unlock() {
   let current_time = 2 * 86_400_000
 
   let time_lock_hash =
@@ -709,5 +694,5 @@ test unlock_transaction_multi_unlock() {
            },
     }
 
-  unlock_transaction(context, time_lock_hash)
+  burn_transaction(context, time_lock_hash)
 }
