@@ -21,20 +21,7 @@ use staking_contracts/utils.{
 }
 use sundae/multisig.{Signature, satisfied}
 
-validator(time_lock_hash: ByteArray) {
-  fn stake_pool(
-    datum: StakePoolDatum,
-    redeemer: StakePoolRedeemer,
-    ctx: ScriptContext,
-  ) -> Bool {
-    or {
-      update_transaction(datum, ctx)?,
-      lock_transaction(datum, redeemer, ctx, time_lock_hash)?,
-    }
-  }
-}
-
-fn update_transaction(datum: StakePoolDatum, ctx: ScriptContext) -> Bool {
+pub fn update_transaction(datum: StakePoolDatum, ctx: ScriptContext) -> Bool {
   when ctx.purpose is {
     //Ensure the utxo is spent by the owner
     Spend(_) ->
@@ -48,7 +35,7 @@ fn update_transaction(datum: StakePoolDatum, ctx: ScriptContext) -> Bool {
   }
 }
 
-fn lock_transaction(
+pub fn lock_transaction(
   datum: StakePoolDatum,
   redeemer: StakePoolRedeemer,
   ctx: ScriptContext,
@@ -75,6 +62,9 @@ fn is_proper_locking_tx(
   ctx: ScriptContext,
   time_lock_hash: ByteArray,
 ) {
+  expect Finite(lower_bound) =
+    ctx.transaction.validity_range.lower_bound.bound_type
+  expect lower_bound >= datum.open_time
   //Find the input guarded by this validator
   expect Some(self) =
     ctx.transaction.inputs
@@ -159,6 +149,7 @@ fn is_proper_locking_tx(
       bytearray.drop(time_lock_datum.extra.time_lock_nft, 28),
     )
 
+  expect bytearray.take(time_lock_datum.extra.time_lock_nft, 28) == self_script
   and {
     one_stake_nft_minted?,
     exactly_one_stake_pool_input?,
@@ -199,6 +190,7 @@ test stake_pool_lock_funds() {
       reward_settings: [
         RewardSetting { ms_locked: 86_400_000, reward_multiplier: reward },
       ],
+      open_time: 0,
     }
 
   let stake_proxy_datum =
@@ -221,7 +213,7 @@ test stake_pool_lock_funds() {
       asset_name: #"000000000000",
       asset_amount: 1_000_000,
       lovelace_amount: 2_000_000,
-      nft_policy_id: #"00000000000000000000000000000000000000000000000000000011",
+      nft_policy_id: stake_pool_hash,
     }
 
   let current_time = 0
@@ -233,7 +225,7 @@ test stake_pool_lock_funds() {
       version: 1,
       extra: LockDatum {
         lock_until: later_time + 86_400_000,
-        time_lock_nft: #"00000000000000000000000000000000000000000000000000000011000000000000",
+        time_lock_nft: bytearray.concat(stake_pool_hash, #"000000000000"),
       },
     }
   let time_lock_data: Data = time_lock_datum
@@ -327,11 +319,7 @@ test stake_pool_lock_funds() {
                inputs: [stake_pool_input, stake_proxy_input],
                outputs: [new_stake_pool_output, time_lock_output],
                mint: zero()
-                 |> add(
-                      #"00000000000000000000000000000000000000000000000000000011",
-                      #"000000000000",
-                      1,
-                    )
+                 |> add(stake_pool_hash, #"000000000000", 1)
                  |> to_minted_value(),
                validity_range: Interval {
                  lower_bound: IntervalBound {

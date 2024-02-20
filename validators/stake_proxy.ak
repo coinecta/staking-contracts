@@ -205,6 +205,7 @@ test stake_proxy_lock_funds() {
       reward_settings: [
         RewardSetting { ms_locked: 86_400_000, reward_multiplier: reward },
       ],
+      open_time: 0,
     }
 
   let stake_proxy_datum =

@@ -192,6 +192,7 @@ test must_have_same_datum_fail_when_different_datum_type() {
       policy_id: #"",
       asset_name: #"",
       owner: Signature(#""),
+      open_time: 0,
     }
   !must_have_same_datum(time_lock_datum, stake_pool_datum)
 }

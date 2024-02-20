@@ -51,6 +51,8 @@ pub type StakePoolDatum {
   asset_name: AssetName,
   //Owner script that is allowed to change settings on the pool or remove unused assets
   owner: MultisigScript,
+  //Earliest time the pool can distribute rewards
+  open_time: PosixTime,
 }
 
 pub type StakePoolRedeemer {
@@ -108,6 +110,7 @@ test must_cast_to_stake_pool_datum() {
       policy_id: #"",
       asset_name: #"",
       owner: Signature(#""),
+      open_time: 0,
     }
   let stake_pool_data: Data = stake_pool_datum
   stake_pool_datum == to_stake_pool_datum(stake_pool_data)
