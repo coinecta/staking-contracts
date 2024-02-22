@@ -57,6 +57,7 @@ pub type StakePoolDatum {
 
 pub type StakePoolRedeemer {
   //Index of the reward setting to be used ina locking tx.
+  // Spec 1.5.8
   reward_index: Int,
 }
 
