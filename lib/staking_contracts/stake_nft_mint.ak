@@ -273,11 +273,13 @@ pub fn burn_transaction(ctx: ScriptContext, time_lock_hash: ByteArray) -> Bool {
                },
              )
 
-      // Spec 2.6.7
+      // Spec 2.6.7.1
+      expect list.length(reference_nfts) == list.length(stake_nfts)
+      // Spec 2.6.7.2
       let nft_count = list.length(reference_nfts) + list.length(stake_nfts)
 
       //Ensure that only CIP-68 nft's are burned
-      // Spec 2.6.7 - n.b. included in the `and` condition below
+      // Spec 2.6.7.2 - n.b. included in the `and` condition below
       let correct_number_burned = burned_count == nft_count
 
       // Spec 2.6.8
