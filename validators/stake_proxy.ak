@@ -80,7 +80,7 @@ fn lock_transaction(
 
 //Ensures that tokens are locked for the duration the user requests
 //and that the reward is matching the expectation
-// Spec 4.3.2.3
+// Spec 4.3.2
 fn is_proper_locking_tx(
   my_output_reference: OutputReference,
   datum: StakeProxyDatum,
