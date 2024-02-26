@@ -23,23 +23,31 @@ use staking_contracts/utils.{
 }
 use sundae/multisig.{Signature, satisfied}
 
+// Spec 4, 4.1
 validator(time_lock_hash: ByteArray, batcher_certificate) {
+  // Spec 4.2
   fn stake_proxy(
     datum: StakeProxyDatum,
     _redeemer: Void,
     ctx: ScriptContext,
   ) -> Bool {
+    // Spec 4.3
     or {
+      // Spec 4.3.1
       refund_transaction(datum, ctx)?,
+      // Spec 4.3.2
       lock_transaction(datum, ctx, time_lock_hash, batcher_certificate)?,
     }
   }
 }
 
+// Spec 4.3.1
 fn refund_transaction(datum: StakeProxyDatum, ctx: ScriptContext) -> Bool {
   when ctx.purpose is {
     //The proxy needs to be spent in a manual refund
+    // Spec 4.3.1.1
     Spend(_) ->
+      // Spec 4.3.1.2
       satisfied(
         datum.owner,
         ctx.transaction.extra_signatories,
@@ -50,6 +58,7 @@ fn refund_transaction(datum: StakeProxyDatum, ctx: ScriptContext) -> Bool {
   }
 }
 
+// Spec 4.3.2
 fn lock_transaction(
   datum: StakeProxyDatum,
   ctx: ScriptContext,
@@ -58,8 +67,11 @@ fn lock_transaction(
 ) -> Bool {
   when ctx.purpose is {
     //The proxy needs to be spend in a locking transaction by a certified batcher
+    // Spec 4.3.2.1
     Spend(my_output_reference) -> and {
+        // Spec 4.3.2.3 - 
         is_proper_locking_tx(my_output_reference, datum, ctx, time_lock_hash)?,
+        // Spec 4.3.2.2
         must_contain_asset(ctx.transaction.outputs, batcher_certificate)?,
       }
     _ -> False
@@ -68,6 +80,7 @@ fn lock_transaction(
 
 //Ensures that tokens are locked for the duration the user requests
 //and that the reward is matching the expectation
+// Spec 4.3.2
 fn is_proper_locking_tx(
   my_output_reference: OutputReference,
   datum: StakeProxyDatum,
@@ -80,6 +93,7 @@ fn is_proper_locking_tx(
       |> transaction.find_input(my_output_reference)
 
   //Find amount of inputs with stake proxy script, should be exactly 1
+  // Spec 4.3.2.3 - n.b. included in the `and` below
   let exactly_one_stake_proxy_input =
     length(
       filter_inputs_by_credential(
@@ -89,21 +103,27 @@ fn is_proper_locking_tx(
     ) == 1
 
   //Find the output locking the staked tokens + reward and extract its datum
+  // Spec 4.3.2.4 - n.b. existence, uniqueness is checked below
   let time_lock_outputs =
     ctx.transaction.outputs
       |> transaction.find_script_outputs(time_lock_hash)
+  // Spec 4.3.2.4 - n.b. existence, uniqueness is checked below
   expect Some(time_lock_output) = time_lock_outputs |> list.at(0)
+  // Spec 4.3.2.5
   expect InlineDatum(time_lock_output_datum) = time_lock_output.datum
   let time_lock_datum = to_time_lock_datum(time_lock_output_datum)
 
   //Time lock should have lovelace, staked asset + reference nft
+  // Spec 4.3.2.6
   expect list.length(value.flatten(time_lock_output.value)) == 3
-  //Time lock should have at least 2 ADA
+  //Time lock should have at least 2 ADA - n.b. comment incorrect
+  // Spec 4.3.2.7
   expect value.lovelace_of(time_lock_output.value) == datum.lovelace_amount
   //We assume all assets matching the policy_id+asset_name are to be staked
   let staked_tokens = datum.asset_amount
 
   //The amount of tokens locked, should be staked + reward
+  // Spec 4.3.2.8
   let locked_tokens =
     time_lock_output.value
       |> quantity_of(datum.policy_id, datum.asset_name)
@@ -111,72 +131,100 @@ fn is_proper_locking_tx(
   //Find minted stake nft
   let minted = from_minted_value(ctx.transaction.mint)
 
+  // Spec 4.3.2.9
   let minted_policy_id = bytearray.take(time_lock_datum.extra.time_lock_nft, 28)
 
+  // Spec 4.3.2.10
   let minted_asset_name =
     bytearray.drop(time_lock_datum.extra.time_lock_nft, 28)
 
   //Make sure the minted nft is using the expected policy_id
+  // Spec 4.3.2.11 - n.b. included in the `and` below
   let correct_stake_nft_policy_id = minted_policy_id == datum.nft_policy_id
 
   //Make sure only 1 is minted
+  // Spec 4.3.2.12 - n.b. included in the `and` below
   let correct_nft_minted =
     quantity_of(minted, minted_policy_id, minted_asset_name) == 1
 
   //There should be 1 destination output
+  // Spec 4.3.2.13 - "There must be exactly one"
   expect [destination_output] =
+    // Spec 4.3.2.13 - "output"
     ctx.transaction.outputs
+      // Spec 4.3.2.13 - "such that"
       |> list.filter(
            fn(o) {
-             o.address == datum.destination.address && o.datum == datum.destination.datum
+             // Spec 4.3.2.13 - "the address of the output is equal to datum.destination.address"
+             o.address == datum.destination.address
+             // Spec 4.3.2.13 - "And the datum of the output is equal to datum.destination.datum"
+             && o.datum == datum.destination.datum
            },
          )
+  // Spec 4.3.2.13 - n.b. Here, we compute the difference between the input and the two outputs sent to the user
   let lovelace_cost =
     value.lovelace_of(self.output.value) - (
       value.lovelace_of(time_lock_output.value) + value.lovelace_of(
         destination_output.value,
       )
     )
-
+  // Spec 4.3.2.13 - and here we enforce that that difference is exactly 2 ada
   expect lovelace_cost == 2_000_000
+  
   //The value of the proxy input should match the value of time_lock+destination
   //taking the lovelace cost (tx fee + sequencer fee) and reward and minted nft's into account
+  // Spec 4.3.2.15 + 4.3.2.16
   let combined_user_value =
+    // Spec 4.3.2.15.1 - "Let relevant outputs be the sum of the time lock output"
     time_lock_output.value
+    // Spec 4.3.2.15.2 - "The destination output"
       |> value.merge(destination_output.value)
+      // Spec 4.3.2.15.3 - "the 2 million lovelace fee"
       |> value.merge(value.from_lovelace(lovelace_cost))
+      // Spec 4.3.2.16.1 - "Let relevant inputs be the sum of the transaction mint" (n.b. negated because we check for equality with zero, rather than checking for equality)
       |> value.merge(value.negate(value.from_minted_value(ctx.transaction.mint)))
+      // Spec 4.3.2.16.2 - "the total value on the stake proxy input being spent" (n.b. negated because ...)
       |> value.merge(value.negate(self.output.value))
+      // Spec 4.3.2.16.3 - "the reward token from the stake pool"
       |> value.merge(
            value.negate(
              value.from_asset(
                datum.policy_id,
                datum.asset_name,
+               // Spec 4.3.2.16.3 "calculated as the difference between the tokens on the time lock output and the amount declared in the datum"
                locked_tokens - staked_tokens,
              ),
            ),
          )
-
+  // Spec 4.3.2.17 - n.b. we check equal to zero, because we subtracted off `relevant_outputs` above
   expect combined_user_value == value.zero()
+  // Spec 4.3.2.18
   expect
     quantity_of(destination_output.value, minted_policy_id, minted_asset_name) == 1
   //Ensure locked tokens is staked + reward
+  // Spec 4.3.2.20 - n.b. included in the `and` below
   let correct_locked_tokens =
     locked_tokens == add_reward(staked_tokens, datum.reward_multiplier)
 
   and {
+    // Spec 4.3.2.3
     exactly_one_stake_proxy_input?,
     //Ensure only one time lock output to avoid unexpected results
+    // Spec 4.3.2.4 - n.b. uniqueness
     must_have_exactly_one_output(time_lock_outputs)?,
+    // Spec 4.3.2.11
     correct_stake_nft_policy_id?,
     //Make sure the time lock does not lock the assets too long
+    // Spec 4.3.2.21
     must_be_locked_until(
       ctx.transaction.validity_range,
       time_lock_output,
       datum.ms_locked,
       hour_millis,
     )?,
+    // Spec 4.3.2.20
     correct_locked_tokens?,
+    // Spec 4.3.2.12
     correct_nft_minted?,
   }
 }

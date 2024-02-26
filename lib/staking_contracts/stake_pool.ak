@@ -21,10 +21,13 @@ use staking_contracts/utils.{
 }
 use sundae/multisig.{Signature, satisfied}
 
+// Spec 1.4
 pub fn update_transaction(datum: StakePoolDatum, ctx: ScriptContext) -> Bool {
   when ctx.purpose is {
     //Ensure the utxo is spent by the owner
+    // Spec 1.4.1
     Spend(_) ->
+      // Spec 1.4.2
       satisfied(
         datum.owner,
         ctx.transaction.extra_signatories,
@@ -35,6 +38,7 @@ pub fn update_transaction(datum: StakePoolDatum, ctx: ScriptContext) -> Bool {
   }
 }
 
+// Spec 1.5
 pub fn lock_transaction(
   datum: StakePoolDatum,
   redeemer: StakePoolRedeemer,
@@ -43,6 +47,7 @@ pub fn lock_transaction(
 ) -> Bool {
   when ctx.purpose is {
     //Ensure the utxo is spent in a valid locking tx
+    // Spec 1.5.1
     Spend(my_output_reference) ->
       is_proper_locking_tx(
         my_output_reference,
@@ -55,6 +60,7 @@ pub fn lock_transaction(
   }
 }
 
+// Spec 1.5
 fn is_proper_locking_tx(
   my_output_reference: OutputReference,
   datum: StakePoolDatum,
@@ -62,10 +68,12 @@ fn is_proper_locking_tx(
   ctx: ScriptContext,
   time_lock_hash: ByteArray,
 ) {
+  // Spec 1.5.2
   expect Finite(lower_bound) =
     ctx.transaction.validity_range.lower_bound.bound_type
   expect lower_bound >= datum.open_time
   //Find the input guarded by this validator
+  // 1.5.3 "which is known by finding the transaction input with the same output reference from the script context purpose"
   expect Some(self) =
     ctx.transaction.inputs
       |> transaction.find_input(my_output_reference)
@@ -73,6 +81,7 @@ fn is_proper_locking_tx(
   let self_input = self.output
 
   //Find amount of inputs with stake pool script, should be exactly 1
+  // Spec 1.5.3 - n.b. checked in the `and` below
   let exactly_one_stake_pool_input =
     length(
       filter_inputs_by_credential(
@@ -82,52 +91,65 @@ fn is_proper_locking_tx(
     ) == 1
 
   //We need to ensure the output of the tx has the same validator attached
+  // Spec 1.5.4 - n.b. existance, but not uniqueness (there is at least one)
   expect ScriptCredential(self_script) = self_input.address.payment_credential
   let self_outputs =
     ctx.transaction.outputs
       |> transaction.find_script_outputs(self_script)
   expect Some(self_output) = self_outputs |> at(0)
 
+  // Spec 1.5.5 - n.b. in particular, The staking address is unchanged
   expect self_input.address == self_output.address
+
   //The output needs to include a utxo with time lock validator
+  // Spec 1.5.6 - n.b. existance, but not uniqueness (there is at least one)
   let time_lock_outputs =
     ctx.transaction.outputs
       |> transaction.find_script_outputs(time_lock_hash)
   expect Some(time_lock) = time_lock_outputs |> at(0)
 
+  // Spec 1.5.7 - inline datum of time TimeLockDatum
   expect InlineDatum(time_lock_data) = time_lock.datum
-
   let time_lock_datum = to_time_lock_datum(time_lock_data)
 
   //We use the reward setting as indicated by the submitter of the transaction
+  // Spec 1.5.9 - n.b. manipulation of reward_index will fail, because either time or reward quantity will be incorrect
   expect Some(reward_setting) =
     datum.reward_settings |> at(redeemer.reward_index)
+  
   //Find out current stake_pool token quantity
+  // Spec 1.5.13.1 "be the quantity of reward token in the stake pool input"
   let stake_pool_size =
     self_input.value
       |> value.quantity_of(datum.policy_id, datum.asset_name)
 
   //Find stake_pool token quantity in output
+  // Spec 1.5.13.1 "the quantity of the same in the stake pool output"
   let new_stake_pool_size =
     self_output.value
       |> value.quantity_of(datum.policy_id, datum.asset_name)
 
   //Difference between old and new quantity is equal to the reward to the staker
+  // Spec 1.5.13.1 - n.b. withdrawn_amount => reward
   let reward = stake_pool_size - new_stake_pool_size
 
   //The locked amount in the time lock output
+  // Spec 1.5.13.2 - n.b. total_locked_output => locked_amount
   let locked_amount =
     time_lock.value
       |> value.quantity_of(datum.policy_id, datum.asset_name)
 
   //The staked amount is deduced from the locked amount and the reward
+  // Spec 1.5.13.3 - n.b. derived_user_locked_output => staked_amount
   let staked_amount = locked_amount - reward
 
   //Ensure the locked amount matches the reward setting
+  // Spec 1.5.13.4 + 1.5.13.5 - n.b. checked in the `and` below
   let correct_locked_amount =
     locked_amount == add_reward(staked_amount, reward_setting.reward_multiplier)
 
   //Make sure no other assets have been altered in the stake pool output compared to the input
+  // Spec 1.5.14.1 - n.b. checked in the `and` below
   let correct_output_value =
     value.without_lovelace(self_input.value) == add(
       value.without_lovelace(self_output.value),
@@ -137,11 +159,16 @@ fn is_proper_locking_tx(
     )
 
   //Allow higher lovelace amount to support increase of minutxo
+  // Spec 1.5.14.2
   expect
     value.lovelace_of(self_input.value) <= value.lovelace_of(self_output.value)
-  //Make sure settings have not been altered
-  let same_datum = InlineDatum(datum) == self_output.datum
 
+  //Make sure settings have not been altered
+  // Spec 1.5.7 - "with the same value as the datum attached to the input"
+  // n.b. checked in the `and` below
+  let same_datum = InlineDatum(datum) == self_output.datum
+  
+  // Spec 1.5.15 - n.b. included in `and` below
   let one_stake_nft_minted =
     1 == value.quantity_of(
       value.from_minted_value(ctx.transaction.mint),
@@ -149,16 +176,25 @@ fn is_proper_locking_tx(
       bytearray.drop(time_lock_datum.extra.time_lock_nft, 28),
     )
 
+  // Spec 1.5.16
   expect bytearray.take(time_lock_datum.extra.time_lock_nft, 28) == self_script
+
   and {
+    // Spec 1.5.15
     one_stake_nft_minted?,
+    // Spec 1.5.3
     exactly_one_stake_pool_input?,
     //Ensure exactly one stake pool output
+    // Spec 1.5.4 - n.b. uniqueness
     must_have_exactly_one_output(self_outputs)?,
     //Ensure exactly one time lock output
+    // Spec 1.5.6 - n.b. uniqueness
     must_have_exactly_one_output(time_lock_outputs)?,
+    // Spec 1.5.7
     same_datum?,
+    // Spec 1.5.13.4 + 1.5.13.5
     correct_locked_amount?,
+    // Spec 1.5.11 + 1.5.12
     //Ensure that the time lock does not expire too soon
     must_be_locked_until(
       ctx.transaction.validity_range,
@@ -166,6 +202,7 @@ fn is_proper_locking_tx(
       reward_setting.ms_locked,
       hour_millis,
     )?,
+    // Spec 1.5.14.1
     correct_output_value?,
   }
 }

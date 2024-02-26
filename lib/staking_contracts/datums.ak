@@ -57,6 +57,7 @@ pub type StakePoolDatum {
 
 pub type StakePoolRedeemer {
   //Index of the reward setting to be used ina locking tx.
+  // Spec 1.5.8
   reward_index: Int,
 }
 
@@ -88,16 +89,19 @@ pub type StakeProxyDatum {
   nft_policy_id: PolicyId,
 }
 
+// Spec 2.5.13
 pub fn to_stake_pool_datum(data: Data) -> StakePoolDatum {
   expect my_datum: StakePoolDatum = data
   my_datum
 }
 
+// UNUSED
 pub fn to_stake_proxy_datum(data: Data) -> StakeProxyDatum {
   expect my_datum: StakeProxyDatum = data
   my_datum
 }
 
+// Spec 2.5.14, 2.6.8.6, 4.3.2.5
 pub fn to_time_lock_datum(data: Data) -> TimeLockDatum {
   expect my_datum: TimeLockDatum = data
   my_datum
