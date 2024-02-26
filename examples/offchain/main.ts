@@ -1,9 +1,10 @@
-import { Blockfrost, Constr, Data, Lucid, Network, Script, applyParamsToScript, fromHex, fromText, toHex, C, toText } from "https://deno.land/x/lucid@0.10.7/mod.ts";
+import { Blockfrost, Constr, Data, Lucid, Network, Script, applyParamsToScript, fromHex, fromText, toHex, C, toText, UTxO, OutRef } from "https://deno.land/x/lucid@0.10.7/mod.ts";
 const { hash_blake2b256 } = C;
 import { config } from "https://deno.land/x/dotenv@v3.2.2/mod.ts";
 import stakingValidatorsBP from "../../plutus.json" with { type: "json" };
 import { Signature, Rational, MultisigScript, DataConvert, Credential, Address, StakeCredential, Destination, NoDatum, DatumHash, InlineDatum } from "./Datums.ts";
-import { abbreviatedAmount, add_reward, floorToSecond, powBigInt, timeToDatestring } from "./Utils.ts";
+import { abbreviatedAmount, add_reward, exists, floorToSecond, powBigInt, timeToDatestring } from "./Utils.ts";
+import { createScriptReferenceAsync } from "./Utils.ts";
 
 const env = config();
 
@@ -87,9 +88,8 @@ type OutputReference = Data.Static<typeof OutputReferenceSchema>;
 const OutputReference = OutputReferenceSchema as unknown as OutputReference;
 
 
-
 const lucid = await Lucid.new(
-    new Blockfrost("https://cardano-preview.blockfrost.io/api/v0", env["BLOCKFROST_API_KEY"]!),
+    new Blockfrost(env["BLOCKFROST_ENDPOINT"], env["BLOCKFROST_API_KEY"]!),
     env["BLOCKFROST_NETWORK"]! as Network,
 );
 
@@ -103,12 +103,16 @@ const batchingCertificatePolicy = lucid.utils.nativeScriptFromJson(
         type: "all",
         scripts: [
             { type: "sig", keyHash: walletAddressDetails.paymentCredential?.hash },
+            {
+                type: "before",
+                slot: lucid.utils.unixTimeToSlot(1708782599000),
+            },
         ],
     },
 );
 
 const batchingCertificatePolicyId = lucid.utils.mintingPolicyToId(batchingCertificatePolicy);
-const batchingSubject = batchingCertificatePolicyId + fromText("CERTIFICATE");
+const batchingSubject = batchingCertificatePolicyId + fromText("CNCT_CERTIFICATE");
 
 const stakingValidatorScript: Script = {
     type: "PlutusV2",
@@ -146,6 +150,16 @@ const stakingMintPolicyId = lucid.utils.mintingPolicyToId(stakingMintPolicy);
 const cnctSubject = cnctPolicyId + cnctAssetName;
 const stakingValidatorAddressDetails = lucid.utils.getAddressDetails(stakingValidatorAddress);
 const stakingProxyValidatorAddressDetails = lucid.utils.getAddressDetails(stakingProxyValidatorAddress);
+const timelockValidatorAddressDetails = lucid.utils.getAddressDetails(timeLockValidatorAddress);
+
+const scriptReferencesDir = "./script_references";
+const stakeProxyScriptRefFile = scriptReferencesDir + "/stake_proxy_script_ref.json";
+const stakePoolScriptRefFile = scriptReferencesDir + "/stake_pool_script_ref.json";
+const timeLockScriptRefFile = scriptReferencesDir + "/time_lock_script_ref.json";
+
+const stakingProxyValidatorScriptRef: OutRef = JSON.parse(Deno.readTextFileSync(stakeProxyScriptRefFile));
+const stakingValidatorScriptRef: OutRef = JSON.parse(Deno.readTextFileSync(stakePoolScriptRefFile));
+const timeLockValidatorScriptRef: OutRef = JSON.parse(Deno.readTextFileSync(timeLockScriptRefFile));
 
 console.log("Wallet address:", walletAddress);
 console.log("Staking Validator Address:", stakingValidatorAddress);
@@ -153,6 +167,7 @@ console.log("Staking Validator Key Hash:", stakingValidatorAddressDetails.paymen
 console.log("Staking Proxy Validator Address:", stakingProxyValidatorAddress);
 console.log("Staking Proxy Validator Key Hash:", stakingProxyValidatorAddressDetails.paymentCredential?.hash);
 console.log("TimeLock Validator Address:", timeLockValidatorAddress);
+console.log("TimeLock Validator Key Hash:", timelockValidatorAddressDetails.paymentCredential?.hash);
 console.log("Staking Mint Policy Id:", stakingMintPolicyId);
 console.log("CNCT PolicyId", cnctPolicyId);
 console.log("CNCT AssetName", cnctAssetName);
@@ -410,7 +425,8 @@ if (Deno.args[0] === "--execute-stake") {
 
         const timelockMetadata: TimeLockMetadata = new Map([
             [fromText("locked_amount"), fromText(rewardTotal.toString())],
-            [fromText("name"), fromText(metadata_name)]
+            [fromText("name"), fromText(metadata_name)],
+            [fromText("image"), fromText("ipfs://QmY1JLgVM9e16basm63iS9VatKhwkQ7D18oAXWP1YXYiqa?tk=vglqvRkfIvNZacCCi42ZhfGh3VpCa3HQUr0rLi8_Wi4")],
         ]);
 
         console.log("Stake NFT Asset Name", stakeNftAssetName, stakePoolUtxo.txHash, stakePoolUtxo.outputIndex);
@@ -422,13 +438,18 @@ if (Deno.args[0] === "--execute-stake") {
         console.log("New Pool Amount", newStakePoolAmount);
         console.log("Metadata Name", metadata_name, lockTime);
         console.log("Timelock Metadata", Data.to(timelockMetadata, TimeLockMetadata));
+        
+        const stakingValidatorScriptRefUtxo = await bLucid.provider.getUtxosByOutRef([stakingValidatorScriptRef]);
+        const stakingProxyValidatorScriptRefUtxo = await bLucid.provider.getUtxosByOutRef([stakingProxyValidatorScriptRef]);
 
         const tx = await bLucid
             .newTx()
             .validFrom(currentTime)
             .validTo(parseInt((validTime).toString()))
             .collectFrom([stakePoolUtxo], Data.to({ reward_index: 0n }, StakePoolRedeemer))
+            .readFrom(stakingValidatorScriptRefUtxo)
             .collectFrom([stakeProxyUtxo], Data.void())
+            .readFrom(stakingProxyValidatorScriptRefUtxo)
             .mintAssets({
                 [stakingMintPolicyId + stake_key_prefix + stakeNftAssetName]: 1n,
                 [stakingMintPolicyId + reference_prefix + stakeNftAssetName]: 1n
@@ -454,8 +475,6 @@ if (Deno.args[0] === "--execute-stake") {
                 [batchingSubject]: 1n
             })
             .payToAddress(walletAddress, { [stakingMintPolicyId + stake_key_prefix + stakeNftAssetName]: 1n })
-            .attachSpendingValidator(stakingValidatorScript)
-            .attachSpendingValidator(stakingProxyValidatorScript)
             .attachMintingPolicy(stakingMintPolicy)
             .complete({
                 nativeUplc: true
@@ -495,11 +514,13 @@ if(Deno.args[0] === "--unlock-stake") {
     const currentTime = lucid.utils.slotToUnixTime(lucid.currentSlot());
     const bufferTime = currentTime + 3_600_000;
     console.log(lockDatum.extra.lock_until, bufferTime);
+    const timeLockValidatorScriptRefUtxo = await lucid.provider.getUtxosByOutRef([timeLockValidatorScriptRef]);
     const unlockTx = await lucid
         .newTx()
         .validFrom(parseInt(lockDatum.extra.lock_until.toString()))
         .validTo(parseInt(bufferTime.toString()))
         .collectFrom([myUtxos[0]], Data.void())
+        .readFrom(timeLockValidatorScriptRefUtxo)
         .mintAssets({
             [stake_key]: -1n,
             [reference_key]: -1n
@@ -507,7 +528,6 @@ if(Deno.args[0] === "--unlock-stake") {
             stake_pool_index: 0n,
             time_lock_index: 0n,
         }, StakeKeyMintRedeemer))
-        .attachSpendingValidator(timeLockValidatorScript)
         .attachMintingPolicy(stakingMintPolicy)
         .complete({
             nativeUplc: true
@@ -535,9 +555,10 @@ if (Deno.args[0] === "--setup-collateral") {
 if (Deno.args[0] === "--mint-certificate") {
     const tx = await lucid
         .newTx()
-        .mintAssets({ [batchingSubject]: 1n })
+        .mintAssets({ [batchingSubject]: 1000000n })
+        .validTo(1708782599000)
         .attachMintingPolicy(batchingCertificatePolicy)
-        .payToAddress("addr_test1qpg007fw5caetatd8gxcyt6d08lzteh9afk5smfd9hr60l72udjv5rtpfksjl64zeay5f2gpj6st0tl8m400nq8hjp9suxaw6c", { [batchingSubject]: 1n })
+        .payToAddress("addr1q8nrqg4s73skqfyyj69mzr7clpe8s7ux9t8z6l55x2f2xuqra34p9pswlrq86nq63hna7p4vkrcrxznqslkta9eqs2nscfavlf", { [batchingSubject]: 1000000n })
         .complete();
 
     const signedTx = await tx.sign().complete();
@@ -562,6 +583,53 @@ if(Deno.args[0] === "--mint-stake-key-hack") {
     const txHash = await signedTx.submit();
     console.log(`Mint stake key hack ${txHash}, waiting for confirmation...`);
     await lucid.provider.awaitTx(txHash);
+}
+
+
+if (Deno.args[0] === "--create-reference-scripts") {
+    const stakeProxyScriptRef = await createScriptReferenceAsync(lucid, stakingProxyValidatorScript, walletAddressDetails.stakeCredential!);
+    await new Promise((resolve) => setTimeout(resolve, 40000));
+    const stakePoolScriptRef = await createScriptReferenceAsync(lucid, stakingValidatorScript, walletAddressDetails.stakeCredential!);
+    await new Promise((resolve) => setTimeout(resolve, 40000));
+    const timeLockScriptRef = await createScriptReferenceAsync(lucid, timeLockValidatorScript, walletAddressDetails.stakeCredential!);
+
+    // Write the reference scripts to a json file under the `script_references` directory, check if the directory exists if not create it
+    const scriptReferencesDir = "./script_references";
+    if (!await exists(scriptReferencesDir)) {
+        Deno.mkdirSync(scriptReferencesDir);
+    }
+
+    const stakeProxyScriptRefFile = scriptReferencesDir + "/stake_proxy_script_ref.json";
+    const stakePoolScriptRefFile = scriptReferencesDir + "/stake_pool_script_ref.json";
+    const timeLockScriptRefFile = scriptReferencesDir + "/time_lock_script_ref.json";
+
+    const stakeProxyScriptRefJson = JSON.stringify(stakeProxyScriptRef);
+    const stakePoolScriptRefJson = JSON.stringify(stakePoolScriptRef);
+    const timeLockScriptRefJson = JSON.stringify(timeLockScriptRef);
+
+    Deno.writeTextFileSync(stakeProxyScriptRefFile, stakeProxyScriptRefJson);
+    Deno.writeTextFileSync(stakePoolScriptRefFile, stakePoolScriptRefJson);
+    Deno.writeTextFileSync(timeLockScriptRefFile, timeLockScriptRefJson);
+}
+
+if(Deno.args[0] === "--send") {
+    const address = Deno.args[1];
+    const unit = Deno.args[2];
+    const amount = BigInt(Deno.args[3]);
+    const tx = await lucid
+        .newTx()
+        .payToAddress(address, { [unit]: amount })
+        .complete();
+    const signedTx = await tx.sign().complete();
+    const txHash = await signedTx.submit();
+    console.log(`Send ${txHash}, waiting for confirmation...`);
+    await lucid.provider.awaitTx(txHash);
+    console.log("Send complete");
+}
+
+if(Deno.args[0] === "--balance") {
+    const UTXOs = await lucid.wallet.getUtxos();
+    console.log("Balance:", UTXOs);
 }
 
 if (Deno.args[0] === "--test") {

@@ -1,3 +1,4 @@
+import { Credential, Data, Lucid, Script, UTxO } from "https://deno.land/x/lucid@0.10.7/mod.ts";
 import { Rational } from "./Datums.ts";
 
 
@@ -69,3 +70,38 @@ export function powBigInt(base: bigint, exponent: bigint): bigint {
 export function floorToSecond(time: number): number {
     return Math.floor(time / 1000) * 1000;
 }
+
+export const createScriptReferenceAsync = async (lucid: Lucid, validatorScript: Script, stakeCredential: Credential) => {
+    const scriptAddr = lucid.utils.validatorToAddress(validatorScript, stakeCredential);
+    console.log("Creating Script Reference", scriptAddr);
+
+    const tx = await lucid.newTx()
+        .payToContract(scriptAddr, {
+            asHash: Data.void(),
+            scriptRef: validatorScript,
+        }, {})
+        .complete();
+    const signedTx = await tx.sign().complete();
+    const txHash = await signedTx.submit();
+
+    console.log("Created Script Reference, waiting for confirmation: ", txHash);
+
+    await lucid.awaitTx(txHash);
+    return { txHash, outputIndex: 0, address: scriptAddr } as UTxO;
+}
+
+export const exists = async (filename: string): Promise<boolean> => {
+    try {
+      await Deno.stat(filename);
+      // successful, file or directory must exist
+      return true;
+    } catch (error) {
+      if (error instanceof Deno.errors.NotFound) {
+        // file or directory does not exist
+        return false;
+      } else {
+        // unexpected error, maybe permissions, pass it along
+        throw error;
+      }
+    }
+  };
