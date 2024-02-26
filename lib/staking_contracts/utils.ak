@@ -15,7 +15,7 @@ use staking_contracts/datums.{
 }
 use sundae/multisig.{Signature}
 
-// Spec 1.5.3
+// Spec 1.5.3, 4.3.3
 pub fn filter_inputs_by_credential(inputs: List<Input>, cred: Credential) {
   inputs |> filter(fn(i) { i.output.address.payment_credential == cred })
 }
@@ -25,36 +25,45 @@ pub fn must_have_exactly_one_output(outputs: List<Output>) {
   length(outputs) == 1
 }
 
+// UNUSED
 pub fn must_have_same_datum(input_datum: Data, output_datum: Data) {
   input_datum == output_datum
 }
 
+// UNUSED
 pub fn must_be_signed_by(transaction: Transaction, vk: VerificationKeyHash) {
   has(transaction.extra_signatories, vk)
 }
 
-// Spec 1.5.13.4
+// Spec 1.5.13.4, 4.3.2.20
 pub fn add_reward(amount: Int, reward: Rational) -> Int {
-  // Spec 1.5.10
+  // Spec 1.5.10, 4.3.2.19
   expect Less != rational.compare(reward, rational.zero())
-  // Spec 1.5.13.4 - "rounded down"
+  // Spec 1.5.13.4, 4.3.2.20 - "rounded down"
   rational.floor(
-    // Spec 1.5.13.4 - "multiplied by"
+    // Spec 1.5.13.4, 4.3.2.20 - "multiplied by"
     rational.mul(
-      // Spec 1.5.13.4 - "derived_user_locked_output" => amount, which comes from staked_amount
+      // Spec 1.5.13.4, 4.3.2.20 - "derived_user_locked_output" => amount, which comes from staked_amount
       rational.from_int(amount),
-      // Spec 1.5.13.4 - "1 + reward_multiplier"
+      // Spec 1.5.13.4, 4.3.2.20 - "1 + reward_multiplier"
       rational.add(rational.from_int(1), reward),
     ),
   )
 }
 
 //Returns true if the list of outputs contains at least 1 of the provided unit
+// Spec 4.3.2.2 - n.b. unit is equal to `batcher_certificate`
 pub fn must_contain_asset(outputs: List<Output>, unit: ByteArray) -> Bool {
+  // Spec 4.3.2.2 - "with a policy ID equal to the first 28 bytes of batcher certificate"
   let policy_id = unit |> take(28)
+  // Spec 4.3.2.2 - "an asset name equal to the remainder of the batcher certificate"
   let asset_id = unit |> drop(28)
+  // Spec 4.3.2.2 - "Must have at least one"
   is_some(
-    outputs |> find(fn(o) { quantity_of(o.value, policy_id, asset_id) > 0 }),
+    // Spec 4.3.2.2 - "one output such that"
+    outputs |> find(fn(o) {
+      // Spec 4.3.2.2 - "the value on that output contains an asset" "and a quantity greater than 0"
+      quantity_of(o.value, policy_id, asset_id) > 0 }),
   )
 }
 
@@ -94,8 +103,12 @@ pub fn must_be_locked_until(
   }
 }
 
+// Spec 2.6.8.8, 3.3.3
 pub fn must_start_after(range: ValidityRange, lock_expiration_time: PosixTime) {
+  // Spec 2.6.8.8 - "the transaction lower bound must be"
   when range.lower_bound.bound_type is {
+    // Spec 2.6.8.8 - Finite, and after or equal to `extra.lock_until`
+    // n.b. lock_expiration_time comes from extra.lock_until
     Finite(tx_earliest_time) -> lock_expiration_time <= tx_earliest_time
     _ -> False
   }?
@@ -103,6 +116,7 @@ pub fn must_start_after(range: ValidityRange, lock_expiration_time: PosixTime) {
 
 //Produces a date string in the format YYYYMMDD
 //Taken from https://stackoverflow.com/questions/7136385/calculate-day-number-from-an-unix-timestamp-in-a-math-way
+// Spec 2.5.18 - n.b. because of the complexity, the details of this code are not covered by the audit
 pub fn time_to_date_string(time: PosixTime) -> ByteArray {
   let s = time / 1000
   let z = s / 86400 + 719468
