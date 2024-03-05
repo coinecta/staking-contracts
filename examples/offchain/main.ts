@@ -1,4 +1,4 @@
-import { Blockfrost, Constr, Data, Lucid, Network, Script, applyParamsToScript, fromHex, fromText, toHex, C, toText } from "https://deno.land/x/lucid@0.10.7/mod.ts";
+import { Blockfrost, Constr, Data, Lucid, Network, Script, applyParamsToScript, fromHex, fromText, toHex, C, toText, Credential as LCredential } from "https://deno.land/x/lucid@0.10.7/mod.ts";
 const { hash_blake2b256 } = C;
 import { config } from "https://deno.land/x/dotenv@v3.2.2/mod.ts";
 import stakingValidatorsBP from "../../plutus.json" with { type: "json" };
@@ -235,7 +235,7 @@ if (Deno.args[0] === "--stake") {
 
     const tx = await lucid
         .newTx()
-        .payToContract(stakingProxyValidatorAddress, { inline: Data.to(stakePoolProxyDatum, StakePoolProxyDatum) }, { [cnctSubject]: 1000n })
+        .payToContract(stakingProxyValidatorAddress, { inline: Data.to(stakePoolProxyDatum, StakePoolProxyDatum) }, { [cnctSubject]: 1000n, "lovelace": 5000000n })
         .complete();
 
     const signedTx = await tx.sign().complete();
@@ -336,7 +336,7 @@ if (Deno.args[0] === "--execute-stake") {
                 try {
                     const _stakePoolDatum = Data.from(utxo.datum, StakePoolProxyDatum);
                     const _ownerMultisigDatum = DataConvert.fromData(_stakePoolDatum.owner, Signature);
-                    if (_ownerMultisigDatum.key_hash === walletAddressDetails.paymentCredential?.hash) {
+                    if (_ownerMultisigDatum.key_hash !== undefined) {
                         return true;
                     }
                 }
@@ -346,7 +346,7 @@ if (Deno.args[0] === "--execute-stake") {
             }
             return false;
         });
-
+        console.log("Stake Proxy UTXOs", stakeProxyUtxos);
         console.log("Valid Stake Proxy UTXOs: ", validStakeProxyUtxos);
 
         const stakePoolUtxos = await bLucid.utxosAt(stakingValidatorAddress);
@@ -392,7 +392,19 @@ if (Deno.args[0] === "--execute-stake") {
         const rewardTotal = add_reward(stakeAmount, rewardMultiplier);
         const newStakePoolAmount = poolAmount - (rewardTotal - stakeAmount);
         const amountWithDecimals = rewardTotal / powBigInt(10n, stakePoolDatum.decimals);
-        
+        const destination = DataConvert.fromData(stakeOrderDatum.destination, Destination);
+        const destinationAddressPaymentKeyHash = destination.address?.payment_credential?.hash!;
+        const destinationAddressStakeKeyHash = destination.address?.stake_credential?.credential?.hash!;
+        const destinationAddress = lucid.utils.credentialToAddress(
+            {
+                type: "Key",
+                hash: destinationAddressPaymentKeyHash
+            },
+            destinationAddressStakeKeyHash != undefined ? {
+                type: "Key",
+                hash: destinationAddressStakeKeyHash
+            } : undefined);
+
         const currentSlot = lucid.currentSlot() - 100; // Subtract 100 slots to account for latency around 5 minutes and for some reason lucid returns a slot that is in the future
         const currentTime = floorToSecond(lucid.utils.slotToUnixTime(currentSlot));
         const validTime = BigInt(floorToSecond(currentTime + (1000 * 60 * 7))); // Add seven minutes to upper bound of tx validity
@@ -422,6 +434,7 @@ if (Deno.args[0] === "--execute-stake") {
         console.log("New Pool Amount", newStakePoolAmount);
         console.log("Metadata Name", metadata_name, lockTime);
         console.log("Timelock Metadata", Data.to(timelockMetadata, TimeLockMetadata));
+        console.log("Destination Address", destinationAddress);
 
         const tx = await bLucid
             .newTx()
@@ -453,14 +466,14 @@ if (Deno.args[0] === "--execute-stake") {
             .payToAddress(bWalletAddress, {
                 [batchingSubject]: 1n
             })
-            .payToAddress(walletAddress, { [stakingMintPolicyId + stake_key_prefix + stakeNftAssetName]: 1n })
+            .payToAddress(destinationAddress, { [stakingMintPolicyId + stake_key_prefix + stakeNftAssetName]: 1n })
             .attachSpendingValidator(stakingValidatorScript)
             .attachSpendingValidator(stakingProxyValidatorScript)
             .attachMintingPolicy(stakingMintPolicy)
             .complete({
                 nativeUplc: true
             });
-        
+
         const signedTx = await tx.sign().complete();
         const txHash = await signedTx.submit();
         console.log(`Execute stake ${txHash}, waiting for confirmation...`);
@@ -470,7 +483,7 @@ if (Deno.args[0] === "--execute-stake") {
     }
 }
 
-if(Deno.args[0] === "--unlock-stake") {
+if (Deno.args[0] === "--unlock-stake") {
     const utxosAtValidator = await lucid.utxosAt(timeLockValidatorAddress);
     console.log("UTXOs at validator: ", utxosAtValidator);
     const myUtxos = utxosAtValidator.filter((utxo) => {
@@ -548,16 +561,16 @@ if (Deno.args[0] === "--mint-certificate") {
     console.log("Mint certificate complete");
 }
 
-if(Deno.args[0] === "--mint-stake-key-hack") {
+if (Deno.args[0] === "--mint-stake-key-hack") {
     const tx = await lucid
         .newTx()
-        .mintAssets({ [stakingMintPolicyId + "9e7a86"]: 1n },  Data.to({
+        .mintAssets({ [stakingMintPolicyId + "9e7a86"]: 1n }, Data.to({
             stake_pool_index: 0n,
             time_lock_index: 0n,
         }, StakeKeyMintRedeemer))
         .attachMintingPolicy(stakingMintPolicy)
         .complete();
-    
+
     const signedTx = await tx.sign().complete();
     const txHash = await signedTx.submit();
     console.log(`Mint stake key hack ${txHash}, waiting for confirmation...`);

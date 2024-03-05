@@ -1,14 +1,16 @@
 use aiken/bytearray.{drop, take}
+use aiken/cbor.{serialise}
 use aiken/dict
 use aiken/interval.{Finite, Interval, IntervalBound}
 use aiken/list.{find, length}
 use aiken/math/rational
+use aiken/string
 use aiken/transaction.{
   InlineDatum, Input, NoDatum, Output, OutputReference, ScriptContext, Spend,
   Transaction, TransactionId,
 }
 use aiken/transaction/credential.{
-  Address, ScriptCredential, VerificationKeyCredential,
+  Address, ScriptCredential, VerificationKeyCredential, with_delegation_key,
 }
 use aiken/transaction/value.{
   add, from_lovelace, from_minted_value, quantity_of, to_minted_value, zero,
@@ -343,10 +345,27 @@ test stake_proxy_lock_funds() {
              }
            },
     }
+
   lock_transaction(
     stake_proxy_datum,
     context,
     time_lock_hash,
     batcher_certificate,
   )
+}
+
+test test_data() {
+  let address =
+    Address {
+      payment_credential: VerificationKeyCredential(
+        #"829cf64af13db7e4d420be0301014facf878bfc4a5f597cd94c40004",
+      ),
+      stake_credential: None,
+    }
+      |> with_delegation_key(
+           "829cf64af13db7e4d420be0301014facf878bfc4a5f597cd94c40004",
+         )
+  trace bytearray.to_hex(serialise(address))
+  trace @"hello world"
+  True
 }
