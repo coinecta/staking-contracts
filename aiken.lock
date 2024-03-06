@@ -8,7 +8,7 @@ source = "github"
 
 [[requirements]]
 name = "SundaeSwap-finance/aicone"
-version = "main"
+version = "a02ce943a2c76c0e683f327af8ad6f28d8b7cfd4"
 source = "github"
 
 [[packages]]
@@ -19,6 +19,8 @@ source = "github"
 
 [[packages]]
 name = "SundaeSwap-finance/aicone"
-version = "main"
+version = "a02ce943a2c76c0e683f327af8ad6f28d8b7cfd4"
 requirements = []
 source = "github"
+
+[etags]

@@ -1,16 +1,57 @@
 set -e
 
-aiken build
+echo
 
-BATCHER_CERTIFICATE="583C00000000000000000000000000000000000000000000000000000011000643B06921E91F6AF4B4EEF9D1A9B55ED75C4E09243B3C67EDD1F013230D75"
+echo "Git commit       = $(git rev-parse HEAD)"
+echo "Aiken Version    = $(aiken --version)"
 
-TIME_LOCK_HASH="581c$(aiken blueprint hash -v time_lock.time_lock)"
-aiken blueprint apply -v stake_pool_mint.spend $TIME_LOCK_HASH > tmp
+echo
+SHA256=$(cat validators/stake_pool_mint.ak | sha256sum | cut -f 1 -d ' ')
+echo "validators/stake_pool_mint.ak                      = ${SHA256}"
+SHA256=$(cat validators/stake_proxy.ak | sha256sum | cut -f 1 -d ' ')
+echo "validators/stake_proxy.ak                          = ${SHA256}"
+SHA256=$(cat validators/time_lock.ak | sha256sum | cut -f 1 -d ' ')
+echo "validators/time_lock.ak                            = ${SHA256}"
+SHA256=$(cat lib/staking_contracts/datums.ak | sha256sum | cut -f 1 -d ' ')
+echo "lib/staking_contracts/datums.ak                    = ${SHA256}"
+SHA256=$(cat lib/staking_contracts/stake_nft_mint.ak | sha256sum | cut -f 1 -d ' ')
+echo "lib/staking_contracts/stake_nft_mint.ak            = ${SHA256}"
+SHA256=$(cat lib/staking_contracts/stake_pool.ak | sha256sum | cut -f 1 -d ' ')
+echo "lib/staking_contracts/stake_pool.ak                = ${SHA256}"
+SHA256=$(cat lib/staking_contracts/utils.ak | sha256sum | cut -f 1 -d ' ')
+echo "lib/staking_contracts/utils.ak                     = ${SHA256}"
+
+echo
+
+aiken build &> /dev/null
+
+TIME_LOCK_HASH=$(cat plutus.json | jq --raw-output '.validators[] | select(.title == "time_lock.time_lock") | .hash')
+TIME_LOCK_ADDR=$(aiken blueprint address -v time_lock.time_lock 2> /dev/null)
+BATCHER_POLICY="f9c811825adb28f42d82391b900ca6962fa94a1d51739fbaa52f4b06"
+BATCHER_ASSET_NAME="434e43545f4345525449464943415445"
+BATCHER_CERTIFICATE="${BATCHER_POLICY}${BATCHER_ASSET_NAME}"
+
+aiken blueprint apply -v stake_pool_mint.mint "581c${TIME_LOCK_HASH}" 2> /dev/null > tmp
 mv tmp plutus.json
-aiken blueprint apply -v stake_pool_mint.mint $TIME_LOCK_HASH > tmp
+aiken blueprint apply -v stake_pool_mint.spend "581c${TIME_LOCK_HASH}" 2> /dev/null > tmp
 mv tmp plutus.json
 
-aiken blueprint apply -v stake_proxy.stake_proxy $TIME_LOCK_HASH > tmp
+STAKE_NFT_POLICY=$(aiken blueprint policy -v stake_pool_mint.mint 2> /dev/null)
+STAKE_POOL_ADDR=$(aiken blueprint address -v stake_pool_mint.spend 2> /dev/null)
+
+aiken blueprint apply -v stake_proxy.stake_proxy "581c${TIME_LOCK_HASH}" 2> /dev/null > tmp
 mv tmp plutus.json
-aiken blueprint apply -v stake_proxy.stake_proxy $BATCHER_CERTIFICATE > tmp
+aiken blueprint apply -v stake_proxy.stake_proxy "582c${BATCHER_CERTIFICATE}" 2> /dev/null > tmp
 mv tmp plutus.json
+STAKE_PROXY_HASH=$(cat plutus.json | jq --raw-output '.validators[] | select(.title == "stake_proxy.stake_proxy") | .hash')
+STAKE_PROXY_ADDR=$(aiken blueprint address -v stake_proxy.stake_proxy 2> /dev/null)
+
+echo -e "Time Lock Hash         = \e[32m ${TIME_LOCK_HASH} \e[0m"
+echo -e "Time Lock Address      = \e[32m ${TIME_LOCK_ADDR} \e[0m"
+echo -e "Stake NFT Policy       = \e[32m ${STAKE_NFT_POLICY} \e[0m"
+echo -e "Stake Pool Address     = \e[32m ${STAKE_POOL_ADDR} \e[0m"
+echo -e "Stake Proxy Hash       = \e[32m ${STAKE_PROXY_HASH} \e[0m"
+echo -e "Stake Proxy Address    = \e[32m ${STAKE_PROXY_ADDR} \e[0m"
+
+echo
+echo
