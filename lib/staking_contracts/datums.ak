@@ -51,8 +51,8 @@ pub type StakePoolDatum {
   asset_name: AssetName,
   //Owner script that is allowed to change settings on the pool or remove unused assets
   owner: MultisigScript,
-  //Decimals for the asset in the stake pool (used for showing staked amount in stake nft)
-  decimals: Int,
+  //Earliest time the pool can distribute rewards
+  open_time: PosixTime,
 }
 
 pub type StakePoolRedeemer {
@@ -80,6 +80,10 @@ pub type StakeProxyDatum {
   policy_id: PolicyId,
   //Asset name of the asset the user wants to stake
   asset_name: AssetName,
+  //Amount of assets to stake
+  asset_amount: Int,
+  //Lovelace amount to put in timelock
+  lovelace_amount: Int,
   //Policy id the user expects the stake nft to be minted with
   nft_policy_id: PolicyId,
 }
@@ -106,7 +110,7 @@ test must_cast_to_stake_pool_datum() {
       policy_id: #"",
       asset_name: #"",
       owner: Signature(#""),
-      decimals: 0,
+      open_time: 0,
     }
   let stake_pool_data: Data = stake_pool_datum
   stake_pool_datum == to_stake_pool_datum(stake_pool_data)

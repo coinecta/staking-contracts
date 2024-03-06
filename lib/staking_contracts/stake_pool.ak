@@ -1,3 +1,4 @@
+use aiken/bytearray
 use aiken/dict
 use aiken/interval.{Finite, Interval, IntervalBound}
 use aiken/list.{at, length}
@@ -9,10 +10,10 @@ use aiken/transaction.{
 use aiken/transaction/credential.{
   Address, ScriptCredential, VerificationKeyCredential,
 }
-use aiken/transaction/value.{add, from_lovelace}
+use aiken/transaction/value.{add, from_lovelace, to_minted_value, zero}
 use staking_contracts/datums.{
   Destination, LockDatum, RewardSetting, StakePoolDatum, StakePoolRedeemer,
-  StakeProxyDatum, TimeLockDatum,
+  StakeProxyDatum, TimeLockDatum, to_time_lock_datum,
 }
 use staking_contracts/utils.{
   add_reward, filter_inputs_by_credential, hour_millis, must_be_locked_until,
@@ -20,20 +21,7 @@ use staking_contracts/utils.{
 }
 use sundae/multisig.{Signature, satisfied}
 
-validator(time_lock_hash: ByteArray) {
-  fn stake_pool(
-    datum: StakePoolDatum,
-    redeemer: StakePoolRedeemer,
-    ctx: ScriptContext,
-  ) -> Bool {
-    or {
-      update_transaction(datum, ctx)?,
-      lock_transaction(datum, redeemer, ctx, time_lock_hash)?,
-    }
-  }
-}
-
-fn update_transaction(datum: StakePoolDatum, ctx: ScriptContext) -> Bool {
+pub fn update_transaction(datum: StakePoolDatum, ctx: ScriptContext) -> Bool {
   when ctx.purpose is {
     //Ensure the utxo is spent by the owner
     Spend(_) ->
@@ -47,7 +35,7 @@ fn update_transaction(datum: StakePoolDatum, ctx: ScriptContext) -> Bool {
   }
 }
 
-fn lock_transaction(
+pub fn lock_transaction(
   datum: StakePoolDatum,
   redeemer: StakePoolRedeemer,
   ctx: ScriptContext,
@@ -74,39 +62,49 @@ fn is_proper_locking_tx(
   ctx: ScriptContext,
   time_lock_hash: ByteArray,
 ) {
+  expect Finite(lower_bound) =
+    ctx.transaction.validity_range.lower_bound.bound_type
+  expect lower_bound >= datum.open_time
   //Find the input guarded by this validator
   expect Some(self) =
     ctx.transaction.inputs
       |> transaction.find_input(my_output_reference)
+
+  let self_input = self.output
 
   //Find amount of inputs with stake pool script, should be exactly 1
   let exactly_one_stake_pool_input =
     length(
       filter_inputs_by_credential(
         ctx.transaction.inputs,
-        self.output.address.payment_credential,
+        self_input.address.payment_credential,
       ),
     ) == 1
 
   //We need to ensure the output of the tx has the same validator attached
-  expect ScriptCredential(self_script) = self.output.address.payment_credential
+  expect ScriptCredential(self_script) = self_input.address.payment_credential
   let self_outputs =
     ctx.transaction.outputs
       |> transaction.find_script_outputs(self_script)
   expect Some(self_output) = self_outputs |> at(0)
 
+  expect self_input.address == self_output.address
   //The output needs to include a utxo with time lock validator
   let time_lock_outputs =
     ctx.transaction.outputs
       |> transaction.find_script_outputs(time_lock_hash)
   expect Some(time_lock) = time_lock_outputs |> at(0)
 
+  expect InlineDatum(time_lock_data) = time_lock.datum
+
+  let time_lock_datum = to_time_lock_datum(time_lock_data)
+
   //We use the reward setting as indicated by the submitter of the transaction
   expect Some(reward_setting) =
     datum.reward_settings |> at(redeemer.reward_index)
   //Find out current stake_pool token quantity
   let stake_pool_size =
-    self.output.value
+    self_input.value
       |> value.quantity_of(datum.policy_id, datum.asset_name)
 
   //Find stake_pool token quantity in output
@@ -131,17 +129,29 @@ fn is_proper_locking_tx(
 
   //Make sure no other assets have been altered in the stake pool output compared to the input
   let correct_output_value =
-    self.output.value == add(
-      self_output.value,
+    value.without_lovelace(self_input.value) == add(
+      value.without_lovelace(self_output.value),
       datum.policy_id,
       datum.asset_name,
       reward,
     )
 
+  //Allow higher lovelace amount to support increase of minutxo
+  expect
+    value.lovelace_of(self_input.value) <= value.lovelace_of(self_output.value)
   //Make sure settings have not been altered
   let same_datum = InlineDatum(datum) == self_output.datum
 
+  let one_stake_nft_minted =
+    1 == value.quantity_of(
+      value.from_minted_value(ctx.transaction.mint),
+      bytearray.take(time_lock_datum.extra.time_lock_nft, 28),
+      bytearray.drop(time_lock_datum.extra.time_lock_nft, 28),
+    )
+
+  expect bytearray.take(time_lock_datum.extra.time_lock_nft, 28) == self_script
   and {
+    one_stake_nft_minted?,
     exactly_one_stake_pool_input?,
     //Ensure exactly one stake pool output
     must_have_exactly_one_output(self_outputs)?,
@@ -175,12 +185,12 @@ test stake_pool_lock_funds() {
       owner: Signature(
         #"00000000000000000000000000000000000000000000000000000000",
       ),
-      decimals: 0,
       policy_id: #"00000000000000000000000000000000000000000000000000000000",
       asset_name: #"000000000000",
       reward_settings: [
         RewardSetting { ms_locked: 86_400_000, reward_multiplier: reward },
       ],
+      open_time: 0,
     }
 
   let stake_proxy_datum =
@@ -201,7 +211,9 @@ test stake_pool_lock_funds() {
       reward_multiplier: reward,
       policy_id: #"00000000000000000000000000000000000000000000000000000000",
       asset_name: #"000000000000",
-      nft_policy_id: #"00000000000000000000000000000000000000000000000000000011",
+      asset_amount: 1_000_000,
+      lovelace_amount: 2_000_000,
+      nft_policy_id: stake_pool_hash,
     }
 
   let current_time = 0
@@ -213,7 +225,7 @@ test stake_pool_lock_funds() {
       version: 1,
       extra: LockDatum {
         lock_until: later_time + 86_400_000,
-        time_lock_nft: #"00000000000000000000000000000000000000000000000000000011",
+        time_lock_nft: bytearray.concat(stake_pool_hash, #"000000000000"),
       },
     }
   let time_lock_data: Data = time_lock_datum
@@ -306,6 +318,9 @@ test stake_pool_lock_funds() {
                ..transaction,
                inputs: [stake_pool_input, stake_proxy_input],
                outputs: [new_stake_pool_output, time_lock_output],
+               mint: zero()
+                 |> add(stake_pool_hash, #"000000000000", 1)
+                 |> to_minted_value(),
                validity_range: Interval {
                  lower_bound: IntervalBound {
                    bound_type: Finite(current_time),
