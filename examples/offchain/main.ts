@@ -42,7 +42,7 @@ const env = config();
 const reference_prefix = "000643b0";
 const stake_key_prefix = "000de140";
 
-const cnctPolicyId = "8b05e87a51c1d4a0fa888d2bb14dbc25e8c343ea379a171b63aa84a0";
+const cnctPolicyId = "c27600f3aff3d94043464a33786429b78e6ab9df5e1d23b774acb34c";
 const cnctAssetName = "434e4354";
 const RewardSettingSchema = Data.Object({
   ms_locked: Data.Integer(),
@@ -150,6 +150,10 @@ const batchingCertificatePolicy = lucid.utils.nativeScriptFromJson(
     type: "all",
     scripts: [
       { type: "sig", keyHash: walletAddressDetails.paymentCredential?.hash },
+      {
+        type: "before",
+        slot: lucid.utils.unixTimeToSlot(1708782599000),
+    },
     ],
   },
 );
@@ -315,7 +319,7 @@ if (Deno.args[0] === "--create-stake-pool") {
     .newTx()
     .payToContract(stakingValidatorAddress, {
       inline: Data.to(stakePoolDatum, StakePoolDatum),
-    }, { [cnctSubject]: 100_000_000n })
+    }, { [cnctSubject]: 100000000n })
     .complete();
 
   const signedTx = await tx.sign().complete();
@@ -457,7 +461,7 @@ if (Deno.args[0] === "--execute-stake") {
   console.log({ redeemer });
   const bLucid = await Lucid.new(
     new Blockfrost(
-      "https://cardano-preview.blockfrost.io/api/v0",
+      env["BLOCKFROST_ENDPOINT"],
       env["BLOCKFROST_API_KEY"]!,
     ),
     env["BLOCKFROST_NETWORK"]! as Network,
@@ -524,7 +528,7 @@ if (Deno.args[0] === "--execute-stake") {
     }
 
     const stakePoolUtxo = validStakePoolUtxos[0];
-    const stakeProxyUtxo = validStakeProxyUtxos[1];
+    const stakeProxyUtxo = validStakeProxyUtxos[0];
 
     const stakeNftAssetName = toHex(hash_blake2b256(fromHex(Data.to({
       transaction_id: {
@@ -554,6 +558,7 @@ if (Deno.args[0] === "--execute-stake") {
       ?.payment_credential?.hash!;
     const destinationAddressStakeKeyHash = destination.address?.stake_credential
       ?.credential?.hash!;
+      
     const destinationAddress = lucid.utils.credentialToAddress(
       {
         type: "Key",
@@ -626,6 +631,8 @@ if (Deno.args[0] === "--execute-stake") {
       batchingSubject,
     );
 
+    console.log({ certificateUtxo });
+
     const inputs = [certificateUtxo[0], stakeProxyUtxo, stakePoolUtxo];
     const inputOutRefs = inputs.map((utxo) => utxo.txHash + utxo.outputIndex);
     const sortedOutRefs = inputOutRefs.sort();
@@ -675,7 +682,7 @@ if (Deno.args[0] === "--execute-stake") {
       .collectFrom([certificateUtxo[0]])
       .payToAddress(bWalletAddress, certificateUtxo[0].assets)
       .payToAddress(
-        "addr_test1qqxxruf47eftc9ueff2pr59z2m0y0r4zfk7pjava9ws57quznnmy4ufakljdgg97qvqsznavlputl3997ktum9xyqqzqm8ch7e",
+        destinationAddress,
         {
           "lovelace": 1_500_000n,
           [stakingMintPolicyId + stake_key_prefix + stakeNftAssetName]: 1n,
@@ -811,19 +818,19 @@ if (Deno.args[0] === "--create-reference-scripts") {
   const stakeProxyScriptRef = await createScriptReferenceAsync(
     lucid,
     stakingProxyValidatorScript,
-    walletAddressDetails.stakeCredential!,
+    undefined,
   );
   await new Promise((resolve) => setTimeout(resolve, 40000));
   const stakePoolScriptRef = await createScriptReferenceAsync(
     lucid,
     stakingValidatorScript,
-    walletAddressDetails.stakeCredential!,
+    undefined,
   );
   await new Promise((resolve) => setTimeout(resolve, 40000));
   const timeLockScriptRef = await createScriptReferenceAsync(
     lucid,
     timeLockValidatorScript,
-    walletAddressDetails.stakeCredential!,
+    undefined,
   );
 
   // Write the reference scripts to a json file under the `script_references` directory, check if the directory exists if not create it
@@ -1045,55 +1052,4 @@ if (Deno.args[0] === "--test") {
   };
 
   console.log("TimeLock Datum", Data.to(timelock, TimeLockDatum));
-}
-
-if (Deno.args[0] === "--create-reference-scripts") {
-  const stakeProxyScriptRef = await createScriptReferenceAsync(
-    lucid,
-    stakingProxyValidatorScript,
-    walletAddressDetails.stakeCredential!,
-  );
-  await new Promise((resolve) => setTimeout(resolve, 40000));
-  const stakePoolScriptRef = await createScriptReferenceAsync(
-    lucid,
-    stakingValidatorScript,
-    walletAddressDetails.stakeCredential!,
-  );
-  await new Promise((resolve) => setTimeout(resolve, 40000));
-  const timeLockScriptRef = await createScriptReferenceAsync(
-    lucid,
-    timeLockValidatorScript,
-    walletAddressDetails.stakeCredential!,
-  );
-  await new Promise((resolve) => setTimeout(resolve, 40000));
-  const stakeNftMintScriptRef = await createScriptReferenceAsync(
-    lucid,
-    stakingMintPolicy,
-    walletAddressDetails.stakeCredential!,
-  );
-
-  // Write the reference scripts to a json file under the `script_references` directory, check if the directory exists if not create it
-  const scriptReferencesDir = "./script_references";
-  if (!await exists(scriptReferencesDir)) {
-    Deno.mkdirSync(scriptReferencesDir);
-  }
-
-  const stakeProxyScriptRefFile = scriptReferencesDir +
-    "/stake_proxy_script_ref.json";
-  const stakePoolScriptRefFile = scriptReferencesDir +
-    "/stake_pool_script_ref.json";
-  const timeLockScriptRefFile = scriptReferencesDir +
-    "/time_lock_script_ref.json";
-  const stakeNftMintScriptRefFile = scriptReferencesDir +
-    "/stake_nft_mint_script_ref.json";
-
-  const stakeProxyScriptRefJson = JSON.stringify(stakeProxyScriptRef);
-  const stakePoolScriptRefJson = JSON.stringify(stakePoolScriptRef);
-  const timeLockScriptRefJson = JSON.stringify(timeLockScriptRef);
-  const stakeNftMintScriptRefJson = JSON.stringify(stakeNftMintScriptRef);
-
-  Deno.writeTextFileSync(stakeProxyScriptRefFile, stakeProxyScriptRefJson);
-  Deno.writeTextFileSync(stakePoolScriptRefFile, stakePoolScriptRefJson);
-  Deno.writeTextFileSync(timeLockScriptRefFile, timeLockScriptRefJson);
-  Deno.writeTextFileSync(stakeNftMintScriptRefFile, stakeNftMintScriptRefJson);
 }
