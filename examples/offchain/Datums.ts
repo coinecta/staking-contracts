@@ -132,7 +132,7 @@ export class Address implements CborSerializable {
                 this.payment_credential = DataConvert.fromData(data.fields[0] as Data, Credential);
             } else if (data.fields.length == 2) {
                 this.payment_credential = DataConvert.fromData(data.fields[0] as Data, Credential);
-                this.stake_credential = DataConvert.fromData(data.fields[1] as Data, Credential);
+                this.stake_credential = DataConvert.fromData(data.fields[1] as Data, StakeCredential);
             } else {
                 throw new Error("Invalid data format for Address");
             }
@@ -150,7 +150,7 @@ export class StakeCredential implements CborSerializable {
     toData = () => new Constr(0, [this.credential?.toData()]) as unknown as Data;
     fromData(data: Data) {
         if (data instanceof Constr) {
-            this.credential = DataConvert.fromData(data.fields[0] as Data, Credential);
+            this.credential = DataConvert.fromData((data.fields[0] as Constr<Data>).fields[0], Credential);
         } else {
             throw new Error("Invalid data format for StakeCredential");
         }
