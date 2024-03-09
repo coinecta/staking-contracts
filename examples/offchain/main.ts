@@ -1,8 +1,3 @@
-<<<<<<< HEAD
-=======
-import { Blockfrost, Constr, Data, Lucid, Network, Script, applyParamsToScript, fromHex, fromText, toHex, C, toText, Credential as LCredential } from "https://deno.land/x/lucid@0.10.7/mod.ts";
-const { hash_blake2b256 } = C;
->>>>>>> 674f60a62cceccbc95b2ff0d22718d28ed2cfe70
 import { config } from "https://deno.land/x/dotenv@v3.2.2/mod.ts";
 import {
   applyParamsToScript,
@@ -356,19 +351,12 @@ if (Deno.args[0] === "--stake") {
     ).toData(),
   };
 
-<<<<<<< HEAD
   const tx = await lucid
     .newTx()
     .payToContract(stakingProxyValidatorAddress, {
       inline: Data.to(stakePoolProxyDatum, StakePoolProxyDatum),
     }, { [cnctSubject]: 1000n, ["lovelace"]: 6500000n })
     .complete();
-=======
-    const tx = await lucid
-        .newTx()
-        .payToContract(stakingProxyValidatorAddress, { inline: Data.to(stakePoolProxyDatum, StakePoolProxyDatum) }, { [cnctSubject]: 1000n, "lovelace": 5000000n })
-        .complete();
->>>>>>> 674f60a62cceccbc95b2ff0d22718d28ed2cfe70
 
   const signedTx = await tx.sign().complete();
   const txHash = await signedTx.submit();
