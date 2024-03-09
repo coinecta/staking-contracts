@@ -592,6 +592,7 @@ if (Deno.args[0] === "--execute-stake") {
         fromText(`[(${cnctPolicyId},${cnctAssetName},${rewardTotal})]`),
       ],
       [fromText("name"), fromText(metadata_name)],
+      [fromText("image"), fromText("ipfs://bafybeigao7lblizfqnizirlsdxjljfzibexuwaak7tehuz4uermlq7lvla")]
     ]);
 
     console.log(Data.to(timelockMetadata, TimeLockMetadata));
@@ -696,6 +697,7 @@ if (Deno.args[0] === "--execute-stake") {
 
     //console.log(await tx.toString());
     const signedTx = await tx.sign().complete();
+    console.log("Signed Tx", signedTx.toString());
     const txHash = await signedTx.submit();
     console.log(`Execute stake ${txHash}, waiting for confirmation...`);
     await lucid.provider.awaitTx(txHash);
