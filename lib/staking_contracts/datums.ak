@@ -1,3 +1,5 @@
+use aiken/bytearray
+use aiken/cbor
 use aiken/dict.{Dict}
 use aiken/hash.{Blake2b_224, Hash}
 use aiken/math/rational.{Rational}
@@ -53,6 +55,25 @@ pub type StakePoolDatum {
   owner: MultisigScript,
   //Earliest time the pool can distribute rewards
   open_time: PosixTime,
+}
+
+test stake_pool_datum_to_data() {
+  expect Some(test_rational) = rational.new(5, 100)
+  let stake_pool_datum =
+    StakePoolDatum {
+      reward_settings: [
+        RewardSetting { ms_locked: 300000, reward_multiplier: test_rational },
+      ],
+      policy_id: #"8b05e87a51c1d4a0fa888d2bb14dbc25e8c343ea379a171b63aa84a0",
+      asset_name: #"434e4354",
+      owner: Signature(
+        #"0c61f135f652bc17994a5411d0a256de478ea24dbc19759d2ba14f03",
+      ),
+      open_time: 0,
+    }
+  let stake_pool_data: Data = stake_pool_datum
+  trace bytearray.to_hex(cbor.serialise(stake_pool_data))
+  stake_pool_datum == to_stake_pool_datum(stake_pool_data)
 }
 
 pub type StakePoolRedeemer {

@@ -167,6 +167,33 @@ pub fn mint_transaction(
   }
 }
 
+test correct_meta() {
+  let proper_meta_amount =
+    list.foldl(
+      [
+        "[",
+        "(",
+        bytearray.from_string(
+          bytearray.to_hex(
+            #"8b05e87a51c1d4a0fa888d2bb14dbc25e8c343ea379a171b63aa84a0",
+          ),
+        ),
+        ",",
+        bytearray.from_string(bytearray.to_hex(#"434e4354")),
+        ",",
+        bytearray.from_string(string.from_int(1050)),
+        ")",
+        "]",
+      ],
+      "",
+      fn(el, sum) { bytearray.concat(sum, el) },
+    )
+
+  trace bytearray.to_hex(cbor.serialise(proper_meta_amount))
+
+  True
+}
+
 pub fn burn_transaction(ctx: ScriptContext, time_lock_hash: ByteArray) -> Bool {
   when ctx.purpose is {
     Mint(own_policy) -> {
