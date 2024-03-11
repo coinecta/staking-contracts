@@ -42,8 +42,9 @@ const env = config();
 const reference_prefix = "000643b0";
 const stake_key_prefix = "000de140";
 
-const cnctPolicyId = "c27600f3aff3d94043464a33786429b78e6ab9df5e1d23b774acb34c";
-const cnctAssetName = "434e4354";
+const cnctPolicyId = env["CNCT_POLICY"]!;
+const cnctAssetName = env["CNCT_ASSET"]!;
+
 const RewardSettingSchema = Data.Object({
   ms_locked: Data.Integer(),
   reward_multiplier: Data.Any(),
@@ -290,26 +291,26 @@ if (Deno.args[0] === "--mint-cnct") {
 
 if (Deno.args[0] === "--create-stake-pool") {
   const stakePoolDatum: StakePoolDatum = {
-    owner: new Signature(walletAddressDetails.paymentCredential?.hash!)
+    owner: new Signature(walletAddressDetails.paymentCredential!.hash)
       .toData(),
     policy_id: cnctPolicyId,
     asset_name: cnctAssetName,
     reward_settings: [
       {
-        ms_locked: 1000n * 60n * 5n, // 5 minutes
+        ms_locked: 1000n * 60n * 60n * 24n * 30n * 1n, // 1 month
+        reward_multiplier: new Rational(1n, 100n).toData(), // 1%
+      },
+      {
+        ms_locked: 1000n * 60n * 60n * 24n * 30n * 3n, // 3 months
         reward_multiplier: new Rational(5n, 100n).toData(), // 5%
       },
       {
-        ms_locked: 1000n * 60n * 10n, // 10 minutes
-        reward_multiplier: new Rational(10n, 100n).toData(), // 10%
-      },
-      {
-        ms_locked: 1000n * 60n * 15n, // 15 minutes
+        ms_locked: 1000n * 60n * 60n * 24n * 30n * 6n, // 6 months
         reward_multiplier: new Rational(15n, 100n).toData(), // 15%
       },
       {
-        ms_locked: 1000n * 60n * 20n, // 20 minutes
-        reward_multiplier: new Rational(20n, 100n).toData(), // 20%
+        ms_locked: 1000n * 60n * 60n * 24n * 30n * 12n, // 12 months
+        reward_multiplier: new Rational(40n, 100n).toData(), // 40%
       },
     ],
     open_time: 0n,
@@ -319,7 +320,7 @@ if (Deno.args[0] === "--create-stake-pool") {
     .newTx()
     .payToContract(stakingValidatorAddress, {
       inline: Data.to(stakePoolDatum, StakePoolDatum),
-    }, { [cnctSubject]: 100000000n })
+    }, { [cnctSubject]: 10_000_000_0000n })
     .complete();
 
   const signedTx = await tx.sign().complete();
